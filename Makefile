@@ -39,7 +39,7 @@ RTE_TARGET ?= x86_64-native-linuxapp-gcc
 include $(RTE_SDK)/mk/rte.vars.mk
 
 # binary name
-APP = dpdkcap 
+APP=dpdkcap
 
 # all source are stored in SRCS-y
 SRCS-y := dpdkcap.c pcap.c lzo/minilzo.c lzo/lzowrite.c
