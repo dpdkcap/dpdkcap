@@ -67,6 +67,8 @@
 #include "lzo/minilzo.h"
 #include "pcap.h"
 
+#define MIN(a,b) (((a)<(b))?(a):(b))
+
 #define RX_RING_SIZE 1024 //256
 #define TX_RING_SIZE 512 //512
 
@@ -80,12 +82,12 @@ const char *argp_program_version = "dpdkcap 0.1";
 const char *argp_program_bug_address = "w.b.devries@utwente.nl";
 static char doc[] = "A DPDK-based packet capture tool";
 static char args_doc[] = "";
-static struct argp_option options[] = { { "output", 'o', "FILE", 0,
-		"Output to FILE (don't add the extension) (default: output)", 0 }, {
-		"statistics", 's', 0, 0, "Print statistics every few seconds", 0 }, {
-		"num_c_cores", 'c', "NUM", 0,
-		"Number of cores used for capture (default: 1)", 0 }, { "num_w_cores",
-		'w', "NUM", 0, "Number of cores used for writing (default: 1)", 0 },
+static struct argp_option options[] = {
+                { "output", 'o', "FILE", 0, "Output to FILE (don't add the extension) (default: output)", 0 },
+                { "statistics", 'S', 0, 0, "Print statistics every few seconds", 0 },
+                { "num_c_cores", 'c', "NUM", 0, "Number of cores used for capture (default: 1)", 0 },
+                { "num_w_cores", 'w', "NUM", 0, "Number of cores used for writing (default: 1)", 0 },
+                { "snaplen", 's', "NUM", 0, "Snap the capture to snaplen bytes (default: 65535).", 0 },
 		{ 0 } };
 struct arguments {
 	char* args[2];
@@ -93,6 +95,7 @@ struct arguments {
 	int statistics;
 	unsigned int num_c_cores;
 	unsigned int num_w_cores;
+        unsigned int snaplen;
 };
 static error_t parse_opt(int key, char* arg, struct argp_state *state) {
 	struct arguments* arguments = state->input;
@@ -101,7 +104,7 @@ static error_t parse_opt(int key, char* arg, struct argp_state *state) {
 	case 'o':
 		arguments->output = arg;
 		break;
-	case 's':
+	case 'S':
 		arguments->statistics = 1;
 		break;
 	case 'c':
@@ -109,6 +112,9 @@ static error_t parse_opt(int key, char* arg, struct argp_state *state) {
 		break;
 	case 'w':
 		arguments->num_w_cores = atoi(arg);
+		break;
+	case 's':
+		arguments->snaplen = atoi(arg);
 		break;
 	default:
 		return ARGP_ERR_UNKNOWN;
@@ -165,9 +171,9 @@ static inline int port_init(uint8_t port, struct rte_mempool *mbuf_pool) {
 
 	//Configure multiqueue
 	if (arguments.num_c_cores > 1) {
-		port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS;
-		port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
-		port_conf.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_UDP | ETH_RSS_TCP;
+		port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS; //Activate Receive Side Scaling
+		port_conf.rx_adv_conf.rss_conf.rss_key = NULL; //Random hash key
+		port_conf.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_UDP | ETH_RSS_TCP; //Applies hash on UDP/TDP packets
 	}
 
 	if (port >= rte_eth_dev_count())
@@ -247,7 +253,7 @@ static int write_core(void) {
 	struct lzowrite_buffer* write_buffer = lzowrite_init(config->output);
 	printf("Corew %s\n", config->output);
 	//Write pcap header
-	struct pcap_header* pcp = pcap_header_create();
+	struct pcap_header* pcp = pcap_header_create(arguments.snaplen);
 	lzowrite32(write_buffer, pcp->magic_number);
 	lzowrite16(write_buffer, pcp->version_major);
 	lzowrite16(write_buffer, pcp->version_minor);
@@ -258,7 +264,7 @@ static int write_core(void) {
 	free(pcp);
 
 	unsigned char* eth;
-	int packet_length;
+	unsigned int packet_length, wire_packet_length;
 	int result;
 	void* dequeued[BURST_SIZE];
 	struct rte_mbuf* bufptr;
@@ -283,19 +289,20 @@ static int write_core(void) {
 			//Cast to packet
 			bufptr = dequeued[i];
 			eth = rte_pktmbuf_mtod(bufptr, unsigned char*);
-			packet_length = rte_pktmbuf_pkt_len(bufptr);
+			wire_packet_length = rte_pktmbuf_pkt_len(bufptr);
+                        /* Truncate packet if needed */
+			packet_length = MIN(arguments.snaplen,wire_packet_length);
 
 			//Write block header
 			gettimeofday(&tv, NULL);
 			header.timestamp = (int32_t) tv.tv_sec;
 			header.microseconds = (int32_t) tv.tv_usec;
-			header.packet_length = packet_length;
-			header.packet_length_wire = packet_length;
-			lzowrite(write_buffer, &header.timestamp, sizeof(uint32_t));
+                        header.packet_length = packet_length;
+                        header.packet_length_wire = wire_packet_length;
+                        lzowrite(write_buffer, &header.timestamp, sizeof(uint32_t));
 			lzowrite(write_buffer, &header.microseconds, sizeof(uint32_t));
 			lzowrite(write_buffer, &header.packet_length, sizeof(uint32_t));
-			lzowrite(write_buffer, &header.packet_length_wire,
-					sizeof(uint32_t));
+			lzowrite(write_buffer, &header.packet_length_wire, sizeof(uint32_t));
 
 			//Write content
 			lzowrite(write_buffer, eth, sizeof(char) * packet_length);
@@ -402,7 +409,8 @@ int main(int argc, char *argv[]) {
 	arguments.output = "output";
 	arguments.num_c_cores = 1;
 	arguments.num_w_cores = 1;
-	argp_parse(&argp, argc, argv, 0, 0, &arguments);
+	arguments.snaplen = PCAP_SNAPLEN_DEFAULT;
+        argp_parse(&argp, argc, argv, 0, 0, &arguments);
 
 	/* Check that there is an even number of ports to send/receive on. */
 	nb_ports = rte_eth_dev_count();

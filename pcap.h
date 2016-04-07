@@ -1,6 +1,8 @@
 #include <stdint.h>
 
-void* pcap_header_create(void);
+#define PCAP_SNAPLEN_DEFAULT 65535
+
+void* pcap_header_create(unsigned int snaplen);
 
 struct pcap_header {
 	uint32_t magic_number;   /* magic number */
