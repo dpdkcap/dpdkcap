@@ -87,7 +87,7 @@ static struct argp_option options[] = {
                 { "statistics", 'S', 0, 0, "Print statistics every few seconds", 0 },
                 { "num_c_cores", 'c', "NUM", 0, "Number of cores used for capture (default: 1)", 0 },
                 { "num_w_cores", 'w', "NUM", 0, "Number of cores used for writing (default: 1)", 0 },
-                { "snaplen", 's', "NUM", 0, "Snap the capture to snaplen bytes (default: 65535).", 0 },
+                { "snaplen", 's', "LENGTH", 0, "Snap the capture to snaplen bytes (default: 65535).", 0 },
 		{ 0 } };
 struct arguments {
 	char* args[2];
