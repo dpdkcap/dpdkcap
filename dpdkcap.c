@@ -299,10 +299,7 @@ static int write_core(void) {
 			header.microseconds = (int32_t) tv.tv_usec;
                         header.packet_length = packet_length;
                         header.packet_length_wire = wire_packet_length;
-                        lzowrite(write_buffer, &header.timestamp, sizeof(uint32_t));
-			lzowrite(write_buffer, &header.microseconds, sizeof(uint32_t));
-			lzowrite(write_buffer, &header.packet_length, sizeof(uint32_t));
-			lzowrite(write_buffer, &header.packet_length_wire, sizeof(uint32_t));
+			lzowrite(write_buffer, &header, sizeof(struct pcap_packet_header));
 
 			//Write content
 			lzowrite(write_buffer, eth, sizeof(char) * packet_length);
