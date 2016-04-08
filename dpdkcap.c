@@ -134,14 +134,21 @@ static unsigned long buffer_to_ring_failed = 0;
 struct arguments arguments;
 
 struct core_config {
-	enum {
-		CORE_CONFIG_NONE, CORE_CONFIG_CAPTURE, CORE_CONFIG_WRITE
-	} mode;
-	pthread_t pthread;
-	const char* output;
-	long packets;
+  enum {CORE_CONFIG_NONE, CORE_CONFIG_CAPTURE, CORE_CONFIG_WRITE} mode;
+  pthread_t pthread;
 };
-static struct core_config* core_config;
+
+struct core_config_capture {
+  struct core_config common;
+};
+
+struct core_config_write {
+  struct core_config common;
+  const char* output;
+  long packets;
+};
+
+static struct core_config** cores_config;
 
 static const struct rte_eth_conf port_conf_default = { .rxmode = {
 		.max_rx_pkt_len = ETHER_MAX_LEN } };
@@ -233,6 +240,9 @@ static int capture_core(void) {
 	for (;;) {
 		struct rte_mbuf *bufs[BURST_SIZE];
 		const uint16_t nb_rx = rte_eth_rx_burst(port, queue, bufs, BURST_SIZE);
+		if (unlikely(ctrlc_caught == 1)) {
+			break;
+		}
 		if (likely(nb_rx > 0)) {
 			int retval = rte_ring_enqueue_burst(write_ring, (void*) bufs,
 					nb_rx);
@@ -248,7 +258,7 @@ static int capture_core(void) {
 }
 
 static int write_core(void) {
-	struct core_config* config = &core_config[rte_lcore_index(rte_lcore_id())];
+	struct core_config_write* config = ((struct core_config_write*) cores_config[rte_lcore_index(rte_lcore_id())]);
 	//Setup write buffer
 	struct lzowrite_buffer* write_buffer = lzowrite_init(config->output);
 	printf("Corew %s\n", config->output);
@@ -320,7 +330,7 @@ static void signal_handler(int dummy) {
 		ctrlc_caught = 1;
 	} else { //Other cores
 		//All cores except for the writing ones can exit
-		if (core_config[rte_lcore_index(rte_lcore_id())].mode != CORE_CONFIG_WRITE) {
+		if (cores_config[rte_lcore_index(rte_lcore_id())]->mode != CORE_CONFIG_WRITE) {
 			//pthread_exit();
 		}
 	}
@@ -332,12 +342,13 @@ static void signal_handler(int dummy) {
  */
 static void lcore_main(void) {
 	signal(SIGINT, signal_handler);
-	struct core_config config = core_config[rte_lcore_index(rte_lcore_id())];
-	config.pthread = pthread_self();
-	if (config.mode == CORE_CONFIG_CAPTURE) {
+	struct core_config* config = cores_config[rte_lcore_index(rte_lcore_id())];
+	config->pthread = pthread_self();
+
+	if (config->mode == CORE_CONFIG_CAPTURE) {
 		printf("Core %d is capturing.\n", rte_lcore_id());
 		capture_core();
-	} else if (config.mode == CORE_CONFIG_WRITE) {
+	} else if (config->mode == CORE_CONFIG_WRITE) {
 		printf("Core %d is writing.\n", rte_lcore_id());
 		write_core();
 	} else {
@@ -356,7 +367,8 @@ static int print_stats(void) {
 
 	long total_packets = 0;
 	for (i = 0; i<rte_lcore_count(); i++) {
-		total_packets += core_config[i].packets;
+                if (cores_config[i]->mode == CORE_CONFIG_WRITE)
+		      total_packets += ((struct core_config_write*) cores_config[i])->packets;
 	}
 
 	printf("\e[1;1H\e[2J");
@@ -454,28 +466,38 @@ int main(int argc, char *argv[]) {
 	}
 
 	//Prepare core configuration
-	core_config = malloc(sizeof(struct core_config) * rte_lcore_count());
-	unsigned int core_index = 1, i;
-	for (i = 0; i < rte_lcore_count(); i++) {
-		core_config[i].mode = CORE_CONFIG_NONE;
-		core_config[i].packets = 0;
-	}
+	cores_config = (struct core_config **) malloc(sizeof(struct cores_config *) * rte_lcore_count());
+        /* First core is not used */
+        cores_config[0] = malloc(sizeof(struct core_config));
+        cores_config[0]->mode = CORE_CONFIG_NONE;
+        /* Capture cores */
+	unsigned int core_index=1,i;
 	for (i = 0; i < arguments.num_c_cores; i++) {
-		core_config[core_index].mode = CORE_CONFIG_CAPTURE;
+                cores_config[core_index] = malloc(sizeof(struct core_config_capture));
+		cores_config[core_index]->mode = CORE_CONFIG_CAPTURE;
 		core_index++;
 	}
+        /* Writing cores */
 	for (i = 0; i < arguments.num_w_cores; i++) {
-		core_config[core_index].mode = CORE_CONFIG_WRITE;
+                cores_config[core_index] = malloc(sizeof(struct core_config_write));
+		cores_config[core_index]->mode = CORE_CONFIG_WRITE;
+		((struct core_config_write *) cores_config[core_index])->packets = 0;
 		char* outputstring = malloc(sizeof(char)*50);
 		sprintf(outputstring, "%s_%d.pcap.lzo", arguments.output, core_index);
-		core_config[core_index].output = outputstring;
+		((struct core_config_write *) cores_config[core_index])->output = outputstring;
 		core_index++;
 	}
+        /* Other cores */
+	for (; core_index < rte_lcore_count(); core_index++) {
+                cores_config[core_index] = malloc(sizeof(struct core_config));
+                cores_config[core_index]->mode = CORE_CONFIG_NONE;
+	}
 
-	core_config[rte_lcore_index(rte_lcore_id())].pthread = pthread_self();
+	cores_config[rte_lcore_index(rte_lcore_id())]->pthread = pthread_self();
 
 	//Launch the cores
-	rte_eal_mp_remote_launch(launch_one_lcore, NULL, SKIP_MASTER);
+        if (rte_eal_mp_remote_launch(launch_one_lcore, NULL, SKIP_MASTER) < 0)
+		rte_exit(EXIT_FAILURE, "Could not launch process on all lcores. One might not be in WAIT state.\n");
 
 	//Setup statistics
 	port_statistics = malloc(sizeof(struct rte_eth_stats));
@@ -490,18 +512,19 @@ int main(int argc, char *argv[]) {
 
 	//Finalize
 	free(port_statistics);
-
 	for (i = 1; i < rte_lcore_count(); i++) {
-		pthread_kill(core_config[i].pthread, SIGINT);
+		pthread_kill(cores_config[i]->pthread, SIGINT);
 	}
-
-	free(core_config);
+        for (i = 0; i < rte_lcore_count(); i++) {
+	        free(cores_config[i]);
+        }
+        free(cores_config);
 
 	printf("Waiting for all cores to exit\n");
 	//Wait for all the cores to complete and exit
 	RTE_LCORE_FOREACH_SLAVE(lcore_id)
 	{
-		if (rte_eal_wait_lcore(lcore_id) < 0)
+	      	if (rte_eal_wait_lcore(lcore_id) < 0)
 			return -1;
 	}
 
