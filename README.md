@@ -16,7 +16,9 @@ Here are dpdkcap available options:
   -c, --num_c_cores=NUM      Number of cores used for capture (default: 1)
   -o, --output=FILE          Output to FILE (don't add the extension) (default:
                              output)
-  -s, --statistics           Print statistics every few seconds
+  -s, --snaplen=NUM          Snap the capture to snaplen bytes (default:
+                             65535).
+  -S, --statistics           Print statistics every few seconds
   -w, --num_w_cores=NUM      Number of cores used for writing (default: 1)
   -?, --help                 Give this help list
       --usage                Give a short usage message
