@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 #include "minilzo.h"
 
 #define HEAP_ALLOC(var,size) \
@@ -18,8 +19,11 @@ void fwrite_int32_be(void* ptr, FILE* out) {
 void* lzowrite_init(const char* filename) {
 	//Prepare the buffers
 	struct lzowrite_buffer* buffer = malloc(sizeof(struct lzowrite_buffer));
-	buffer->output = fopen(filename, "w");
-	buffer->length = 0;
+        buffer->output = fopen(filename, "w");
+        if (buffer->output == NULL) {
+          printf("[LZO] Could not open %s : %d (%s)\n", filename, errno, strerror(errno));
+        }
+        buffer->length = 0;
 
 	//Allocate workmemory
 	HEAP_ALLOC(wrkmem, LZO1X_1_MEM_COMPRESS);
