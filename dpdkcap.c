@@ -151,24 +151,8 @@ struct core_config_write {
   struct core_stats_write * stats;
 };
 
-
-
-
 static const struct rte_eth_conf port_conf_default = { .rxmode = {
 		.max_rx_pkt_len = ETHER_MAX_LEN } };
-
-/* basicfwd.c: Basic DPDK skeleton forwarding example. */
-
-static unsigned long upper_power_of_two(unsigned long v) {
-	v--;
-	v |= v >> 1;
-	v |= v >> 2;
-	v |= v >> 4;
-	v |= v >> 8;
-	v |= v >> 16;
-	v++;
-	return v;
-}
 
 /*
  * Initializes a given port using global settings and with the RX buffers
@@ -429,7 +413,7 @@ int main(int argc, char *argv[]) {
 
 	//Initialize buffer for writing to disk
 	write_ring = rte_ring_create("Ring for writing",
-			upper_power_of_two(WRITE_RING_SIZE), rte_socket_id(), 0);
+			rte_align32pow2 (WRITE_RING_SIZE), rte_socket_id(), 0);
 
 	//Initialize statistics timer
 	rte_timer_subsystem_init();
