@@ -77,6 +77,7 @@
 #define BURST_SIZE 256 //128
 #define WRITE_RING_SIZE NUM_MBUFS
 
+
 /* ARGP */
 const char *argp_program_version = "dpdkcap 0.1";
 const char *argp_program_bug_address = "w.b.devries@utwente.nl";
@@ -86,21 +87,37 @@ static struct argp_option options[] = {
                 { "output", 'o', "FILE", 0, "Output to FILE (don't add the extension) (default: output)", 0 },
                 { "statistics", 'S', 0, 0, "Print statistics every few seconds", 0 },
                 { "num_c_cores", 'c', "NUM", 0, "Number of cores used for capture (default: 1)", 0 },
+                { "portmask", 'p', "PORTMASK", 0, "Ethernet ports mask (default: 0x1)", 0 },
                 { "num_w_cores", 'w', "NUM", 0, "Number of cores used for writing (default: 1)", 0 },
                 { "snaplen", 's', "LENGTH", 0, "Snap the capture to snaplen bytes (default: 65535).", 0 },
 		{ 0 } };
 struct arguments {
 	char* args[2];
 	const char* output;
+	uint64_t portmask;
 	int statistics;
 	unsigned int num_c_cores;
 	unsigned int num_w_cores;
         unsigned int snaplen;
 };
+
 static error_t parse_opt(int key, char* arg, struct argp_state *state) {
 	struct arguments* arguments = state->input;
+        char *end;
 
 	switch (key) {
+	case 'p':
+		/* parse hexadecimal string */
+        	arguments->portmask = strtoul(arg, &end, 16);
+    		if (errno != 0 || *end != '\0' || (arguments->portmask == ULONG_MAX && errno == ERANGE)) {
+        		fprintf(stderr, "Invalid portmask '%s' (could not convert to unsigned long)\n", arg);
+			return EINVAL;
+                }
+        	if (arguments->portmask == 0) {
+        		fprintf(stderr, "Invalid portmask '%s', no port used\n", arg);
+                	return EINVAL;
+                }
+		break;
 	case 'o':
 		arguments->output = arg;
 		break;
@@ -154,11 +171,15 @@ struct core_config_write {
 static const struct rte_eth_conf port_conf_default = { .rxmode = {
 		.max_rx_pkt_len = ETHER_MAX_LEN } };
 
+
+
+
+
 /*
  * Initializes a given port using global settings and with the RX buffers
  * coming from the mbuf_pool passed as a parameter.
  */
-static inline int port_init(uint8_t port, struct rte_mempool *mbuf_pool) {
+static int port_init(uint8_t port, struct rte_mempool *mbuf_pool) {
 	struct rte_eth_conf port_conf = port_conf_default;
 	const uint16_t rx_rings = arguments.num_c_cores, tx_rings = 1;
 	int retval;
@@ -360,9 +381,12 @@ static int print_stats(void) {
  */
 int main(int argc, char *argv[]) {
 	signal(SIGINT, signal_handler);
+	unsigned int portlist[64];
 	struct rte_mempool *mbuf_pool;
 	unsigned nb_ports;
 	uint8_t portid;
+	unsigned int i;
+
 
 	/* Initialize the Environment Abstraction Layer (EAL). */
 	int ret = rte_eal_init(argc, argv);
@@ -378,11 +402,17 @@ int main(int argc, char *argv[]) {
 	arguments.num_c_cores = 1;
 	arguments.num_w_cores = 1;
 	arguments.snaplen = PCAP_SNAPLEN_DEFAULT;
+	arguments.portmask = 0x1;
         argp_parse(&argp, argc, argv, 0, 0, &arguments);
 
-	/* Check that there is an even number of ports to send/receive on. */
-	nb_ports = rte_eth_dev_count();
-	printf("Found %u ports to listen on\n", nb_ports);
+	/* Creates the port list */
+	nb_ports = 0;
+	for (i = 0; i < (unsigned)RTE_MIN(64, rte_eth_dev_count()); i++) {
+		if (! ((uint64_t)(1ULL << i) & arguments.portmask))
+			continue;
+		portlist[nb_ports++] = i;
+	}
+	printf("Using %u ports to listen on\n", nb_ports);
 
 	if (nb_ports > rte_lcore_count() - 1)
 		rte_exit(EXIT_FAILURE,
@@ -426,7 +456,6 @@ int main(int argc, char *argv[]) {
 
 	//Prepare core configuration
         /* Writing cores */
-        unsigned int i;
         unsigned int core_index = rte_get_next_lcore(-1, 1, 0);
         cores_stats_write_list = malloc(sizeof(struct core_stats_write) * arguments.num_w_cores);
         for (i=0; i<arguments.num_w_cores; i++) {
@@ -446,7 +475,7 @@ int main(int argc, char *argv[]) {
         for (i=0; i<arguments.num_c_cores; i++) {
 	        //Configure capture core
                 struct core_config_capture * config = malloc(sizeof(struct core_config_capture));
-                config->port = 0;
+                config->port = portlist[i%nb_ports];
                 config->queue = i;
                 //Launch capture core
                 if (rte_eal_remote_launch((lcore_function_t *) capture_core, config, core_index) < 0)
