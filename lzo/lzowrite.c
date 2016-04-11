@@ -21,7 +21,7 @@ void* lzowrite_init(const char* filename) {
 	struct lzowrite_buffer* buffer = malloc(sizeof(struct lzowrite_buffer));
         buffer->output = fopen(filename, "w");
         if (buffer->output == NULL) {
-          printf("[LZO] Could not open %s : %d (%s)\n", filename, errno, strerror(errno));
+          printf("LZO: Could not open %s : %d (%s)\n", filename, errno, strerror(errno));
           return NULL;
         }
         buffer->length = 0;

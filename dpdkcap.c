@@ -270,7 +270,8 @@ static int capture_core(struct core_config_capture * config) {
 static int write_core(struct core_config_write * config) {
 	//Setup write buffer
 	struct lzowrite_buffer* write_buffer = lzowrite_init(config->output);
-	signal(SIGINT, signal_handler);
+	if (!write_buffer) return -1;
+        signal(SIGINT, signal_handler);
 	printf("Core %d is writing in file : %s.\n", rte_lcore_id(), config->output);
 
         //Write pcap header
