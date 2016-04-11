@@ -263,7 +263,7 @@ static int capture_core(struct core_config_capture * config) {
 		}
 	}
         free(config);
-	printf("Closed core C\n");
+	printf("Closed capture core %d\n",rte_lcore_id());
 	return 0;
 }
 
@@ -332,7 +332,7 @@ static int write_core(struct core_config_write * config) {
 	//Close pcap file
 	lzowrite_free(write_buffer);
         free(config);
-	printf("Closed core W\n");
+	printf("Closed writing core %d\n",rte_lcore_id());
 	return 0;
 }
 
