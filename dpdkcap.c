@@ -77,6 +77,8 @@
 #define BURST_SIZE 256 //128
 #define WRITE_RING_SIZE NUM_MBUFS
 
+#define RTE_LOGTYPE_DPDKCAP RTE_LOGTYPE_USER1
+
 
 /* ARGP */
 const char *argp_program_version = "dpdkcap 0.1";
@@ -110,11 +112,11 @@ static error_t parse_opt(int key, char* arg, struct argp_state *state) {
 		/* parse hexadecimal string */
         	arguments->portmask = strtoul(arg, &end, 16);
     		if (errno != 0 || *end != '\0' || (arguments->portmask == ULONG_MAX && errno == ERANGE)) {
-        		fprintf(stderr, "Invalid portmask '%s' (could not convert to unsigned long)\n", arg);
+                        RTE_LOG(ERR, DPDKCAP, "Invalid portmask '%s' (could not convert to unsigned long)\n", arg);
 			return EINVAL;
                 }
         	if (arguments->portmask == 0) {
-        		fprintf(stderr, "Invalid portmask '%s', no port used\n", arg);
+        		RTE_LOG(ERR, DPDKCAP, "Invalid portmask '%s', no port used\n", arg);
                 	return EINVAL;
                 }
 		break;
@@ -199,7 +201,7 @@ static int port_init(uint8_t port, struct rte_mempool *mbuf_pool) {
 
 	/* Allocate and set up 1 RX queue per Ethernet port. */
 	for (q = 0; q < rx_rings; q++) {
-		printf("Creating queue %d\n", q);
+                RTE_LOG(INFO, DPDKCAP, "Creating queue %d\n", q);
 		retval = rte_eth_rx_queue_setup(port, q, RX_RING_SIZE,
 				rte_eth_dev_socket_id(port), NULL, mbuf_pool);
 		if (retval < 0)
@@ -222,7 +224,7 @@ static int port_init(uint8_t port, struct rte_mempool *mbuf_pool) {
 	/* Display the port MAC address. */
 	struct ether_addr addr;
 	rte_eth_macaddr_get(port, &addr);
-	printf("Port %u MAC: %02" PRIx8 " %02" PRIx8 " %02" PRIx8
+        RTE_LOG(INFO, DPDKCAP, "Port %u MAC: %02" PRIx8 " %02" PRIx8 " %02" PRIx8
 	" %02" PRIx8 " %02" PRIx8 " %02" PRIx8 "\n", (unsigned) port,
 			addr.addr_bytes[0], addr.addr_bytes[1], addr.addr_bytes[2],
 			addr.addr_bytes[3], addr.addr_bytes[4], addr.addr_bytes[5]);
@@ -237,7 +239,7 @@ static int port_init(uint8_t port, struct rte_mempool *mbuf_pool) {
  * Handles Ctrl + C
  */
 static void signal_handler(int dummy) {
-	printf("Caught signal %d on core %u\n", dummy, rte_lcore_id());
+        RTE_LOG(NOTICE, DPDKCAP, "Caught signal %d on core %u\n", dummy, rte_lcore_id());
 	if (rte_lcore_index(rte_lcore_id()) == 0) { //Master core
 		ctrlc_caught = 1;
 	}
@@ -251,7 +253,7 @@ static int capture_core(struct core_config_capture * config) {
 	uint8_t queue = config->queue; //rte_lcore_index(rte_lcore_id()) - 1;
 
 	signal(SIGINT, signal_handler);
-	printf("Core %u is capturing packets for port %u\n", rte_lcore_id(), port);
+        RTE_LOG(INFO, DPDKCAP, "Core %u is capturing packets for port %u\n", rte_lcore_id(), port);
 
 	/* Run until the application is quit or killed. */
 	for (;;) {
@@ -271,7 +273,7 @@ static int capture_core(struct core_config_capture * config) {
 		}
 	}
         free(config);
-	printf("Closed capture core %d\n",rte_lcore_id());
+        RTE_LOG(INFO, DPDKCAP, "Closed capture core %d\n",rte_lcore_id());
 	return 0;
 }
 
@@ -283,7 +285,7 @@ static int write_core(struct core_config_write * config) {
 	struct lzowrite_buffer* write_buffer = lzowrite_init(config->output);
 	if (!write_buffer) return -1;
         signal(SIGINT, signal_handler);
-	printf("Core %d is writing in file : %s.\n", rte_lcore_id(), config->output);
+        RTE_LOG(INFO, DPDKCAP, "Core %d is writing in file : %s.\n", rte_lcore_id(), config->output);
 
         //Write pcap header
 	struct pcap_header* pcp = pcap_header_create(arguments.snaplen);
@@ -344,7 +346,7 @@ static int write_core(struct core_config_write * config) {
 	//Close pcap file
 	lzowrite_free(write_buffer);
         free(config);
-	printf("Closed writing core %d\n",rte_lcore_id());
+        RTE_LOG(INFO, DPDKCAP, "Closed writing core %d\n",rte_lcore_id());
 	return 0;
 }
 
@@ -394,7 +396,6 @@ int main(int argc, char *argv[]) {
 	unsigned nb_ports;
 	unsigned int i;
 
-
 	/* Initialize the Environment Abstraction Layer (EAL). */
 	int ret = rte_eal_init(argc, argv);
 	if (ret < 0)
@@ -402,6 +403,10 @@ int main(int argc, char *argv[]) {
 
 	argc -= ret;
 	argv += ret;
+
+        /* Set log level */
+        rte_set_log_type(RTE_LOGTYPE_DPDKCAP, 1);
+        rte_set_log_level(RTE_LOG_DEBUG);
 
 	/* Parse arguments */
 	arguments.statistics = 0;
@@ -420,8 +425,8 @@ int main(int argc, char *argv[]) {
                 if (i<rte_eth_dev_count())
 		      portlist[nb_ports++] = i;
                 else
-                      fprintf(stderr,"Warning: port %d is in portmask, but not enough ports " \
-                              "are available. Ignoring...\n", i);
+                      RTE_LOG(WARNING, DPDKCAP, "Warning: port %d is in portmask, " \
+                          "but not enough ports are available. Ignoring...\n", i);
 	}
 	printf("Using %u ports to listen on\n", nb_ports);
 	if (nb_ports == 0)
@@ -451,7 +456,6 @@ int main(int argc, char *argv[]) {
         for (i = 0; i < nb_ports; i++) {
 		int8_t retval = port_init(portlist[i], mbuf_pool);
 		if (retval != 0) {
-			printf("Error: %d\n", retval);
 			rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8 "\n", portlist[i]);
 		}
 	}
@@ -513,7 +517,7 @@ int main(int argc, char *argv[]) {
 	free(port_statistics);
         free(cores_stats_write_list);
 
-        printf("Waiting for all cores to exit\n");
+        RTE_LOG(NOTICE, DPDKCAP, "Waiting for all cores to exit\n");
 	//Wait for all the cores to complete and exit
 	rte_eal_mp_wait_lcore();
 
