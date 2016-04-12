@@ -79,6 +79,8 @@
 
 #define RTE_LOGTYPE_DPDKCAP RTE_LOGTYPE_USER1
 
+#define STATS_PERIOD_MS 500
+#define ROTATING_CHAR "-\\|/"
 
 /* ARGP */
 const char *argp_program_version = "dpdkcap 0.1";
@@ -88,17 +90,18 @@ static char args_doc[] = "";
 static struct argp_option options[] = {
                 { "output", 'o', "FILE", 0, "Output to FILE (don't add the extension) (default: output)", 0 },
                 { "statistics", 'S', 0, 0, "Print statistics every few seconds", 0 },
-                { "num_c_cores", 'c', "NUM", 0, "Number of cores used for capture (default: 1)", 0 },
+                { "per_port_c_cores", 'c', "NUM", 0, "Number of cores per port used for capture (default: 1)", 0 },
+                { "num_w_cores", 'w', "NUM", 0, "Total number of cores used for writing (default: 1)", 0 },
                 { "portmask", 'p', "PORTMASK", 0, "Ethernet ports mask (default: 0x1)", 0 },
-                { "num_w_cores", 'w', "NUM", 0, "Number of cores used for writing (default: 1)", 0 },
                 { "snaplen", 's', "LENGTH", 0, "Snap the capture to snaplen bytes (default: 65535).", 0 },
 		{ 0 } };
+
 struct arguments {
 	char* args[2];
 	const char* output;
 	uint64_t portmask;
 	int statistics;
-	unsigned int num_c_cores;
+	unsigned int per_port_c_cores;
 	unsigned int num_w_cores;
         unsigned int snaplen;
 };
@@ -127,7 +130,7 @@ static error_t parse_opt(int key, char* arg, struct argp_state *state) {
 		arguments->statistics = 1;
 		break;
 	case 'c':
-		arguments->num_c_cores = atoi(arg);
+		arguments->per_port_c_cores = atoi(arg);
 		break;
 	case 'w':
 		arguments->num_w_cores = atoi(arg);
@@ -152,6 +155,9 @@ static unsigned long buffer_to_ring_failed = 0;
 
 struct arguments arguments;
 
+unsigned int portlist[64];
+unsigned int nb_ports;
+
 /* Statistics related structures */
 struct core_stats_write {
   int packets;
@@ -170,22 +176,27 @@ struct core_config_write {
   struct core_stats_write * stats;
 };
 
-static const struct rte_eth_conf port_conf_default = { .rxmode = {
-		.max_rx_pkt_len = ETHER_MAX_LEN } };
+static const struct rte_eth_conf port_conf_default = {
+  .rxmode = {
+    .mq_mode = ETH_MQ_RX_NONE,
+    .max_rx_pkt_len = ETHER_MAX_LEN,
+  }
+};
 
+/* Statistics update */
+unsigned int nb_stat_update;
 
 /*
  * Initializes a given port using global settings and with the RX buffers
  * coming from the mbuf_pool passed as a parameter.
  */
-static int port_init(uint8_t port, struct rte_mempool *mbuf_pool) {
+static int port_init(uint8_t port, const uint16_t rx_rings, struct rte_mempool *mbuf_pool) {
 	struct rte_eth_conf port_conf = port_conf_default;
-	const uint16_t rx_rings = arguments.num_c_cores, tx_rings = 1;
 	int retval;
 	uint16_t q;
 
 	//Configure multiqueue
-	if (arguments.num_c_cores > 1) {
+	if (rx_rings > 1) {
 		port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS; //Activate Receive Side Scaling
 		port_conf.rx_adv_conf.rss_conf.rss_key = NULL; //Random hash key
 		port_conf.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_UDP | ETH_RSS_TCP; //Applies hash on UDP/TDP packets
@@ -195,26 +206,24 @@ static int port_init(uint8_t port, struct rte_mempool *mbuf_pool) {
 		return -1;
 
 	/* Configure the Ethernet device. */
-	retval = rte_eth_dev_configure(port, rx_rings, tx_rings, &port_conf);
+	retval = rte_eth_dev_configure(port, rx_rings, 1, &port_conf);
 	if (retval != 0)
 		return retval;
 
-	/* Allocate and set up 1 RX queue per Ethernet port. */
+	/* Allocate and set up RX queues. */
 	for (q = 0; q < rx_rings; q++) {
-                RTE_LOG(INFO, DPDKCAP, "Creating queue %d\n", q);
 		retval = rte_eth_rx_queue_setup(port, q, RX_RING_SIZE,
 				rte_eth_dev_socket_id(port), NULL, mbuf_pool);
 		if (retval < 0)
 			return retval;
-	}
+        }
 
-	/* Allocate and set up 1 TX queue per Ethernet port. */
-	for (q = 0; q < tx_rings; q++) {
-		retval = rte_eth_tx_queue_setup(port, q, TX_RING_SIZE,
-				rte_eth_dev_socket_id(port), NULL);
-		if (retval < 0)
-			return retval;
-	}
+	/* Allocate one TX queue (unused) */
+	retval = rte_eth_tx_queue_setup(port, 0, TX_RING_SIZE,
+	    rte_eth_dev_socket_id(port),NULL);
+	if (retval < 0)
+	  	return retval;
+
 
 	/* Start the Ethernet port. */
 	retval = rte_eth_dev_start(port);
@@ -273,7 +282,7 @@ static int capture_core(struct core_config_capture * config) {
 		}
 	}
         free(config);
-        RTE_LOG(INFO, DPDKCAP, "Closed capture core %d\n",rte_lcore_id());
+        RTE_LOG(INFO, DPDKCAP, "Closed capture core %d (port %d)\n",rte_lcore_id(), port);
 	return 0;
 }
 
@@ -354,34 +363,45 @@ static int write_core(struct core_config_write * config) {
  * Prints a set of stats
  */
 static int print_stats(void) {
-	unsigned int i;
-	rte_eth_stats_get(0, port_statistics);
+	unsigned int i, j;
+
+        nb_stat_update ++;
 
 	long total_packets = 0;
 	for (i = 0; i<arguments.num_w_cores; i++) {
 	      total_packets += cores_stats_write_list[i].packets;
 	}
 
-	printf("\e[1;1H\e[2J");
-	printf("===Packet capture statistics====\n");
-	printf(
-			"--Built-in counters--\nRX Successful packets: %lu\nRX Unsuccessful packets: %lu\nRX Missed packets: %lu\nNo MBUF: %lu\n",
-			port_statistics->ipackets, port_statistics->ierrors,
-			port_statistics->imissed, port_statistics->rx_nombuf);
-	for (i = 0; i < RTE_ETHDEV_QUEUE_STAT_CNTRS; i++) {
-		printf("Queue %d RX: %lu RX-Error: %lu\n", i,
-				port_statistics->q_ipackets[i], port_statistics->q_errors[i]);
-	}
-	printf("--Other counters--\n");
+        printf("\e[1;1H\e[2J");
+	printf("=== Packet capture statistics %c ===\n", ROTATING_CHAR[nb_stat_update%4]);
+        printf("-- GLOBAL --\n");
 	printf("Entries free on ring: %u\n", rte_ring_free_count(write_ring));
 	printf("Total packets in master: %lu\n", total_packets);
 	printf("Put buffer into ring failures: %lu\n", buffer_to_ring_failed);
-	if (total_packets > 0) {
-		printf("Total percentage captured: %.2f%%\n",
-				((float) total_packets) / port_statistics->ipackets
-						* 100.0);
-	}
-	printf("================================\n");
+        printf("-- PER PORT --\n");
+        for (i=0; i<nb_ports; i++) {
+                rte_eth_stats_get(portlist[i], port_statistics);
+                printf("- PORT %d -\n", portlist[i]);
+                printf(
+                                "Built-in counters:\n  RX Successful packets: %lu\n  RX Successful bytes: %lu\n  RX Unsuccessful packets: %lu\n  RX Missed packets: %lu\n  No MBUF: %lu\n",
+                                port_statistics->ipackets,  port_statistics->ibytes,
+                                port_statistics->ierrors,
+                                port_statistics->imissed, port_statistics->rx_nombuf);
+                printf("Per queue:\n");
+                for (j = 0; j < arguments.per_port_c_cores; j++) {
+                        printf("  Queue %d RX: %lu RX-Error: %lu\n", j,
+                                        port_statistics->q_ipackets[j], port_statistics->q_errors[j]);
+                }
+                printf("  (%d queues hidden)\n", RTE_ETHDEV_QUEUE_STAT_CNTRS - arguments.per_port_c_cores);
+
+                /*if (total_packets > 0) {
+                        printf("Total percentage captured: %.2f%%\n",
+                                        ((float) total_packets) / port_statistics->ipackets
+                                                        * 100.0);
+                }*/
+        }
+
+	printf("===================================\n");
 	return 0;
 }
 
@@ -391,10 +411,9 @@ static int print_stats(void) {
  */
 int main(int argc, char *argv[]) {
 	signal(SIGINT, signal_handler);
-	unsigned int portlist[64];
 	struct rte_mempool *mbuf_pool;
-	unsigned nb_ports;
-	unsigned int i;
+        unsigned int port_id;
+	unsigned int i,j;
 
 	/* Initialize the Environment Abstraction Layer (EAL). */
 	int ret = rte_eal_init(argc, argv);
@@ -411,11 +430,15 @@ int main(int argc, char *argv[]) {
 	/* Parse arguments */
 	arguments.statistics = 0;
 	arguments.output = "output";
-	arguments.num_c_cores = 1;
+	arguments.per_port_c_cores = 1;
 	arguments.num_w_cores = 1;
 	arguments.snaplen = PCAP_SNAPLEN_DEFAULT;
 	arguments.portmask = 0x1;
         argp_parse(&argp, argc, argv, 0, 0, &arguments);
+
+	/* Check if one port is available */
+        if (rte_eth_dev_count() == 0)
+		rte_exit(EXIT_FAILURE, "Error: No port available.\n");
 
 	/* Creates the port list */
 	nb_ports = 0;
@@ -428,22 +451,19 @@ int main(int argc, char *argv[]) {
                       RTE_LOG(WARNING, DPDKCAP, "Warning: port %d is in portmask, " \
                           "but not enough ports are available. Ignoring...\n", i);
 	}
-	printf("Using %u ports to listen on\n", nb_ports);
 	if (nb_ports == 0)
-		rte_exit(EXIT_FAILURE,
-				"Error: No valid port in use, check portmask option.\n");
+		rte_exit(EXIT_FAILURE, "Error: Found no usable port. Check portmask option.\n");
 
+	RTE_LOG(INFO,DPDKCAP,"Using %u ports to listen on\n", nb_ports);
 
-	if (nb_ports > rte_lcore_count() - 1)
-		rte_exit(EXIT_FAILURE,
-				"Error: Atleast one core is required per port\n");
-
-	unsigned int required_cores = ((arguments.num_c_cores
-			+ arguments.num_w_cores) + 1);
+        /* Checks core number */
+	unsigned int required_cores = (1 + nb_ports*arguments.per_port_c_cores + arguments.num_w_cores);
 	if (rte_lcore_count() < required_cores) {
-		rte_exit(EXIT_FAILURE, "Assign at least %d cores to dpdkcap\n",
+		rte_exit(EXIT_FAILURE, "Assign at least %d cores to dpdkcap.\n",
 				required_cores);
 	}
+	RTE_LOG(INFO,DPDKCAP,"Using %u core out of %d allocated\n", required_cores, rte_lcore_count());
+
 
 	/* Creates a new mempool in memory to hold the mbufs. */
 	mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", NUM_MBUFS * nb_ports,
@@ -452,58 +472,64 @@ int main(int argc, char *argv[]) {
 	if (mbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
 
-	/* Initialize all ports. */
-        for (i = 0; i < nb_ports; i++) {
-		int8_t retval = port_init(portlist[i], mbuf_pool);
-		if (retval != 0) {
-			rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8 "\n", portlist[i]);
-		}
-	}
 
 	//Initialize buffer for writing to disk
 	write_ring = rte_ring_create("Ring for writing",
 			rte_align32pow2 (WRITE_RING_SIZE), rte_socket_id(), 0);
 
+	/* Core index */
+        unsigned int core_index = rte_get_next_lcore(-1, 1, 0);
+
+        /* Writing cores */
+        cores_stats_write_list = malloc(sizeof(struct core_stats_write) * arguments.num_w_cores);
+        for (i=0; i<arguments.num_w_cores; i++) {
+              //Configure writing core
+              struct core_config_write * config = malloc(sizeof(struct core_config_write));
+              config->stats = &(cores_stats_write_list[i]);
+              config->stats->packets = 0;
+              char* outputstring = malloc(sizeof(char)*50);
+              sprintf(outputstring, "%s_%d.pcap.lzo", arguments.output, core_index);
+              config->output = outputstring;
+              //Launch writing core
+              if (rte_eal_remote_launch((lcore_function_t *) write_core, config, core_index) < 0)
+                      rte_exit(EXIT_FAILURE, "Could not launch writing process on lcore %d.\n",core_index);
+              core_index = rte_get_next_lcore(core_index, 1, 0);
+        }
+
+        for (i = 0; i < nb_ports; i++) {
+              port_id = portlist[i];
+
+              // Port init
+	      int8_t retval = port_init(port_id, arguments.per_port_c_cores, mbuf_pool);
+	      if (retval != 0) {
+	              rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8 "\n", port_id);
+	      }
+
+              /* Capturing cores */
+              for (j=0; j<arguments.per_port_c_cores; j++) {
+                      //Configure capture core
+                      struct core_config_capture * config = malloc(sizeof(struct core_config_capture));
+                      config->port = port_id;
+                      config->queue = j;
+                      //Launch capture core
+                      if (rte_eal_remote_launch((lcore_function_t *) capture_core, config, core_index) < 0)
+                            rte_exit(EXIT_FAILURE, "Could not launch capture process on lcore %d.\n",core_index);
+                      core_index = rte_get_next_lcore(core_index, 1, 0);
+              }
+        }
+
+        //Setup statistics
+	port_statistics = malloc(sizeof(struct rte_eth_stats));
+        nb_stat_update = 0;
+
 	//Initialize statistics timer
 	rte_timer_subsystem_init();
 	struct rte_timer stats_timer;
-	rte_timer_init(&stats_timer);
-	if (arguments.statistics == 1) {
-		rte_timer_reset(&stats_timer, 2000000ULL * 2000, PERIODICAL,
-				rte_lcore_id(), (void*) print_stats, NULL);
-	}
-
-	//Prepare core configuration
-        /* Writing cores */
-        unsigned int core_index = rte_get_next_lcore(-1, 1, 0);
-        cores_stats_write_list = malloc(sizeof(struct core_stats_write) * arguments.num_w_cores);
-        for (i=0; i<arguments.num_w_cores; i++) {
-                //Configure writing core
-                struct core_config_write * config = malloc(sizeof(struct core_config_write));
-		config->stats = &(cores_stats_write_list[i]);
-                config->stats->packets = 0;
-                char* outputstring = malloc(sizeof(char)*50);
-		sprintf(outputstring, "%s_%d.pcap.lzo", arguments.output, core_index);
-		config->output = outputstring;
-                //Launch writing core
-                if (rte_eal_remote_launch((lcore_function_t *) write_core, config, core_index) < 0)
-                      rte_exit(EXIT_FAILURE, "Could not launch writing process on lcore %d.\n",core_index);
-                core_index = rte_get_next_lcore(core_index, 1, 0);
+        if (arguments.statistics == 1) {
+              rte_timer_init (&(stats_timer));
+              rte_timer_reset(&(stats_timer), 2000000ULL * STATS_PERIOD_MS, PERIODICAL,
+                              rte_lcore_id(), (void*) print_stats, NULL);
         }
-        /* Capturing cores */
-        for (i=0; i<arguments.num_c_cores; i++) {
-	        //Configure capture core
-                struct core_config_capture * config = malloc(sizeof(struct core_config_capture));
-                config->port = portlist[i%nb_ports];
-                config->queue = i;
-                //Launch capture core
-                if (rte_eal_remote_launch((lcore_function_t *) capture_core, config, core_index) < 0)
-                      rte_exit(EXIT_FAILURE, "Could not launch capture process on lcore %d.\n",core_index);
-                core_index = rte_get_next_lcore(core_index, 1, 0);
-	}
-
-	//Setup statistics
-	port_statistics = malloc(sizeof(struct rte_eth_stats));
 
 	//Loop until ctrl+c
 	for (;;) {

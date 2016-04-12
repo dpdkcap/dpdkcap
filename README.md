@@ -13,14 +13,16 @@ Abstraction Layer (EAL) arguments before dpdkcap specific ones:
 Here are dpdkcap available options:
 
 ```
-  -c, --num_c_cores=NUM      Number of cores used for capture (default: 1)
+  -c, --per_port_c_cores=NUM Number of cores per port used for capture
+                             (default: 1)
   -o, --output=FILE          Output to FILE (don't add the extension) (default:
                              output)
   -p, --portmask=PORTMASK    Ethernet ports mask (default: 0x1)
   -s, --snaplen=LENGTH       Snap the capture to snaplen bytes (default:
                              65535).
   -S, --statistics           Print statistics every few seconds
-  -w, --num_w_cores=NUM      Number of cores used for writing (default: 1)
+  -w, --num_w_cores=NUM      Total number of cores used for writing (default:
+                             1)
   -?, --help                 Give this help list
       --usage                Give a short usage message
   -V, --version              Print program version
