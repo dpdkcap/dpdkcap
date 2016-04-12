@@ -66,6 +66,7 @@
 #include "lzo/lzowrite.h"
 #include "lzo/minilzo.h"
 #include "pcap.h"
+#include "utils.h"
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
@@ -160,7 +161,9 @@ unsigned int nb_ports;
 
 /* Statistics related structures */
 struct core_stats_write {
-  int packets;
+  unsigned long packets;
+  unsigned long bytes;
+  unsigned long compressed_bytes;
 };
 
 static struct core_stats_write * cores_stats_write_list;
@@ -200,7 +203,7 @@ static int port_init(uint8_t port, const uint16_t rx_rings, struct rte_mempool *
 		port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS; //Activate Receive Side Scaling
 		port_conf.rx_adv_conf.rss_conf.rss_key = NULL; //Random hash key
 		port_conf.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_UDP | ETH_RSS_TCP; //Applies hash on UDP/TDP packets
-	}
+        }
 
 	if (port >= rte_eth_dev_count())
 		return -1;
@@ -214,6 +217,10 @@ static int port_init(uint8_t port, const uint16_t rx_rings, struct rte_mempool *
 	for (q = 0; q < rx_rings; q++) {
 		retval = rte_eth_rx_queue_setup(port, q, RX_RING_SIZE,
 				rte_eth_dev_socket_id(port), NULL, mbuf_pool);
+		if (retval < 0)
+			return retval;
+                //Stats bindings
+                retval = rte_eth_dev_set_rx_queue_stats_mapping (port, q, q);
 		if (retval < 0)
 			return retval;
         }
@@ -347,6 +354,8 @@ static int write_core(struct core_config_write * config) {
 
 			//Write content
 			lzowrite(write_buffer, eth, sizeof(char) * packet_length);
+                        config->stats->bytes += packet_length;
+                        config->stats->compressed_bytes += write_buffer->out_length;
 
 			//Free buffer
 			rte_pktmbuf_free(bufptr);
@@ -368,23 +377,34 @@ static int print_stats(void) {
         nb_stat_update ++;
 
 	long total_packets = 0;
-	for (i = 0; i<arguments.num_w_cores; i++) {
+	long total_bytes = 0;
+	long total_compressedbytes = 0;
+        for (i = 0; i<arguments.num_w_cores; i++) {
 	      total_packets += cores_stats_write_list[i].packets;
+              total_bytes += cores_stats_write_list[i].bytes;
+              total_compressedbytes += cores_stats_write_list[i].compressed_bytes;
 	}
 
         printf("\e[1;1H\e[2J");
 	printf("=== Packet capture statistics %c ===\n", ROTATING_CHAR[nb_stat_update%4]);
         printf("-- GLOBAL --\n");
 	printf("Entries free on ring: %u\n", rte_ring_free_count(write_ring));
-	printf("Total packets in master: %lu\n", total_packets);
+	printf("Total packets written: %lu\n", total_packets);
+	printf("Total bytes written: %s ", bytes_format(total_bytes));
+        printf("compressed to %s\n", bytes_format(total_compressedbytes));
 	printf("Put buffer into ring failures: %lu\n", buffer_to_ring_failed);
         printf("-- PER PORT --\n");
         for (i=0; i<nb_ports; i++) {
                 rte_eth_stats_get(portlist[i], port_statistics);
                 printf("- PORT %d -\n", portlist[i]);
-                printf(
-                                "Built-in counters:\n  RX Successful packets: %lu\n  RX Successful bytes: %lu\n  RX Unsuccessful packets: %lu\n  RX Missed packets: %lu\n  No MBUF: %lu\n",
-                                port_statistics->ipackets,  port_statistics->ibytes,
+                printf("Built-in counters:\n" \
+                       "  RX Successful packets: %lu\n" \
+                       "  RX Successful bytes: %s (avg: %d bytes/pkt)\n" \
+                       "  RX Unsuccessful packets: %lu\n" \
+                       "  RX Missed packets: %lu\n  No MBUF: %lu\n",
+                                port_statistics->ipackets,
+                                bytes_format(port_statistics->ibytes),
+                                (int)((float)port_statistics->ibytes/(float)port_statistics->ipackets),
                                 port_statistics->ierrors,
                                 port_statistics->imissed, port_statistics->rx_nombuf);
                 printf("Per queue:\n");
@@ -487,6 +507,8 @@ int main(int argc, char *argv[]) {
               struct core_config_write * config = malloc(sizeof(struct core_config_write));
               config->stats = &(cores_stats_write_list[i]);
               config->stats->packets = 0;
+              config->stats->bytes = 0;
+              config->stats->compressed_bytes = 0;
               char* outputstring = malloc(sizeof(char)*50);
               sprintf(outputstring, "%s_%d.pcap.lzo", arguments.output, core_index);
               config->output = outputstring;

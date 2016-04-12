@@ -101,6 +101,7 @@ void lzowrite(struct lzowrite_buffer* lzowrite_buffer, void* src, size_t len) {
 		printf("Data bigger than buffer!\n");
 	}
 
+        lzowrite_buffer->out_length = 0;
 	if (lzowrite_buffer->length + len > LZOWRITE_BUFFER_SIZE) {
 		lzowrite_wbuf(lzowrite_buffer);
 	}
