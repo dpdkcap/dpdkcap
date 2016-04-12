@@ -172,9 +172,6 @@ static const struct rte_eth_conf port_conf_default = { .rxmode = {
 		.max_rx_pkt_len = ETHER_MAX_LEN } };
 
 
-
-
-
 /*
  * Initializes a given port using global settings and with the RX buffers
  * coming from the mbuf_pool passed as a parameter.
@@ -236,6 +233,9 @@ static int port_init(uint8_t port, struct rte_mempool *mbuf_pool) {
 	return 0;
 }
 
+/*
+ * Handles Ctrl + C
+ */
 static void signal_handler(int dummy) {
 	printf("Caught signal %d on core %u\n", dummy, rte_lcore_id());
 	if (rte_lcore_index(rte_lcore_id()) == 0) { //Master core
@@ -243,6 +243,9 @@ static void signal_handler(int dummy) {
 	}
 }
 
+/*
+ * Capture the traffic from the given port/queue tuple
+ */
 static int capture_core(struct core_config_capture * config) {
 	uint8_t port = config->port;
 	uint8_t queue = config->queue; //rte_lcore_index(rte_lcore_id()) - 1;
@@ -272,6 +275,9 @@ static int capture_core(struct core_config_capture * config) {
 	return 0;
 }
 
+/*
+ * Write the packets form the write ring into a pcap compressed file
+ */
 static int write_core(struct core_config_write * config) {
 	//Setup write buffer
 	struct lzowrite_buffer* write_buffer = lzowrite_init(config->output);
@@ -342,7 +348,9 @@ static int write_core(struct core_config_write * config) {
 	return 0;
 }
 
-
+/*
+ * Prints a set of stats
+ */
 static int print_stats(void) {
 	unsigned int i;
 	rte_eth_stats_get(0, port_statistics);
@@ -384,7 +392,6 @@ int main(int argc, char *argv[]) {
 	unsigned int portlist[64];
 	struct rte_mempool *mbuf_pool;
 	unsigned nb_ports;
-	uint8_t portid;
 	unsigned int i;
 
 
@@ -407,12 +414,20 @@ int main(int argc, char *argv[]) {
 
 	/* Creates the port list */
 	nb_ports = 0;
-	for (i = 0; i < (unsigned)RTE_MIN(64, rte_eth_dev_count()); i++) {
+	for (i = 0; i < 64; i++) {
 		if (! ((uint64_t)(1ULL << i) & arguments.portmask))
 			continue;
-		portlist[nb_ports++] = i;
+                if (i<rte_eth_dev_count())
+		      portlist[nb_ports++] = i;
+                else
+                      fprintf(stderr,"Warning: port %d is in portmask, but not enough ports " \
+                              "are available. Ignoring...\n", i);
 	}
 	printf("Using %u ports to listen on\n", nb_ports);
+	if (nb_ports == 0)
+		rte_exit(EXIT_FAILURE,
+				"Error: No valid port in use, check portmask option.\n");
+
 
 	if (nb_ports > rte_lcore_count() - 1)
 		rte_exit(EXIT_FAILURE,
@@ -433,11 +448,11 @@ int main(int argc, char *argv[]) {
 		rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
 
 	/* Initialize all ports. */
-	for (portid = 0; portid < nb_ports; portid++) {
-		int8_t retval = port_init(portid, mbuf_pool);
+        for (i = 0; i < nb_ports; i++) {
+		int8_t retval = port_init(portlist[i], mbuf_pool);
 		if (retval != 0) {
 			printf("Error: %d\n", retval);
-			rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8 "\n", portid);
+			rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8 "\n", portlist[i]);
 		}
 	}
 
