@@ -78,7 +78,11 @@
 #define BURST_SIZE 256 //128
 #define WRITE_RING_SIZE NUM_MBUFS
 
+#define OUTPUT_FILE_LENGTH 100
+
 #define RTE_LOGTYPE_DPDKCAP RTE_LOGTYPE_USER1
+
+
 
 #define STATS_PERIOD_MS 500
 #define ROTATING_CHAR "-\\|/"
@@ -161,6 +165,11 @@ unsigned int nb_ports;
 
 /* Statistics related structures */
 struct core_stats_write {
+  int core_id;
+  char output_file[OUTPUT_FILE_LENGTH];
+  unsigned long current_file_packets;
+  unsigned long current_file_bytes;
+  unsigned long current_file_compressed_bytes;
   unsigned long packets;
   unsigned long bytes;
   unsigned long compressed_bytes;
@@ -175,7 +184,7 @@ struct core_config_capture {
 };
 
 struct core_config_write {
-  const char* output;
+  char output_file_template[OUTPUT_FILE_LENGTH];
   struct core_stats_write * stats;
 };
 
@@ -298,10 +307,14 @@ static int capture_core(struct core_config_capture * config) {
  */
 static int write_core(struct core_config_write * config) {
 	//Setup write buffer
-	struct lzowrite_buffer* write_buffer = lzowrite_init(config->output);
+	struct lzowrite_buffer* write_buffer = lzowrite_init(config->output_file_template);
 	if (!write_buffer) return -1;
         signal(SIGINT, signal_handler);
-        RTE_LOG(INFO, DPDKCAP, "Core %d is writing in file : %s.\n", rte_lcore_id(), config->output);
+
+        RTE_LOG(INFO, DPDKCAP, "Core %d is writing in file : %s.\n", rte_lcore_id(), config->output_file_template);
+        memcpy(config->stats->output_file, config->output_file_template, OUTPUT_FILE_LENGTH);
+        config->stats->core_id = rte_lcore_id();
+
 
         //Write pcap header
 	struct pcap_header* pcp = pcap_header_create(arguments.snaplen);
@@ -334,6 +347,7 @@ static int write_core(struct core_config_write * config) {
 
 		//Increase the packet counter
 		config->stats->packets += result;
+		config->stats->current_file_packets += result;
 
 		int i;
 		for (i = 0; i < result; i++) {
@@ -356,6 +370,8 @@ static int write_core(struct core_config_write * config) {
 			lzowrite(write_buffer, eth, sizeof(char) * packet_length);
                         config->stats->bytes += packet_length;
                         config->stats->compressed_bytes += write_buffer->out_length;
+                        config->stats->current_file_bytes += packet_length;
+                        config->stats->current_file_compressed_bytes += write_buffer->out_length;
 
 			//Free buffer
 			rte_pktmbuf_free(bufptr);
@@ -387,12 +403,21 @@ static int print_stats(void) {
 
         printf("\e[1;1H\e[2J");
 	printf("=== Packet capture statistics %c ===\n", ROTATING_CHAR[nb_stat_update%4]);
+
         printf("-- GLOBAL --\n");
 	printf("Entries free on ring: %u\n", rte_ring_free_count(write_ring));
 	printf("Total packets written: %lu\n", total_packets);
 	printf("Total bytes written: %s ", bytes_format(total_bytes));
         printf("compressed to %s\n", bytes_format(total_compressedbytes));
+        printf("Compressed/uncompressed size ratio: 1 / %.2f\n", total_compressedbytes?(float)total_bytes/(float)total_compressedbytes:0.0f);
 	printf("Put buffer into ring failures: %lu\n", buffer_to_ring_failed);
+
+        printf("-- PER WRITING CORE --\n");
+        for (i=0; i<arguments.num_w_cores; i++) {
+                printf("Writing core %d: %s ",cores_stats_write_list[i].core_id, cores_stats_write_list[i].output_file);
+                printf("(%s)\n", bytes_format(cores_stats_write_list[i].current_file_compressed_bytes));
+        }
+
         printf("-- PER PORT --\n");
         for (i=0; i<nb_ports; i++) {
                 rte_eth_stats_get(portlist[i], &port_statistics);
@@ -404,7 +429,7 @@ static int print_stats(void) {
                        "  RX Missed packets: %lu\n  No MBUF: %lu\n",
                                 port_statistics.ipackets,
                                 bytes_format(port_statistics.ibytes),
-                                (int)((float)port_statistics.ibytes/(float)port_statistics.ipackets),
+                                port_statistics.ipackets?(int)((float)port_statistics.ibytes/(float)port_statistics.ipackets):0,
                                 port_statistics.ierrors,
                                 port_statistics.imissed, port_statistics.rx_nombuf);
                 printf("Per queue:\n");
@@ -503,15 +528,22 @@ int main(int argc, char *argv[]) {
         /* Writing cores */
         cores_stats_write_list = malloc(sizeof(struct core_stats_write) * arguments.num_w_cores);
         for (i=0; i<arguments.num_w_cores; i++) {
+              //Init stats
+              cores_stats_write_list[i] = (struct core_stats_write) {
+                .core_id=core_index,
+                .output_file= {0},
+                .current_file_packets=0,
+                .current_file_bytes=0,
+                .current_file_compressed_bytes=0,
+                .packets = 0,
+                .bytes = 0,
+                .compressed_bytes = 0,
+              };
               //Configure writing core
               struct core_config_write * config = malloc(sizeof(struct core_config_write));
               config->stats = &(cores_stats_write_list[i]);
-              config->stats->packets = 0;
-              config->stats->bytes = 0;
-              config->stats->compressed_bytes = 0;
-              char* outputstring = malloc(sizeof(char)*50);
-              sprintf(outputstring, "%s_%d.pcap.lzo", arguments.output, core_index);
-              config->output = outputstring;
+              snprintf(config->output_file_template, OUTPUT_FILE_LENGTH, "%s_%d.pcap.lzo", arguments.output, core_index);
+
               //Launch writing core
               if (rte_eal_remote_launch((lcore_function_t *) write_core, config, core_index) < 0)
                       rte_exit(EXIT_FAILURE, "Could not launch writing process on lcore %d.\n",core_index);
