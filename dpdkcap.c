@@ -150,7 +150,7 @@ static struct argp argp = { options, parse_opt, args_doc, doc, 0, 0, 0 };
 static volatile bool ctrlc_caught = 0;
 
 static struct rte_ring *write_ring;
-static struct rte_eth_stats *port_statistics;
+static struct rte_eth_stats port_statistics;
 
 static unsigned long buffer_to_ring_failed = 0;
 
@@ -395,22 +395,22 @@ static int print_stats(void) {
 	printf("Put buffer into ring failures: %lu\n", buffer_to_ring_failed);
         printf("-- PER PORT --\n");
         for (i=0; i<nb_ports; i++) {
-                rte_eth_stats_get(portlist[i], port_statistics);
+                rte_eth_stats_get(portlist[i], &port_statistics);
                 printf("- PORT %d -\n", portlist[i]);
                 printf("Built-in counters:\n" \
                        "  RX Successful packets: %lu\n" \
                        "  RX Successful bytes: %s (avg: %d bytes/pkt)\n" \
                        "  RX Unsuccessful packets: %lu\n" \
                        "  RX Missed packets: %lu\n  No MBUF: %lu\n",
-                                port_statistics->ipackets,
-                                bytes_format(port_statistics->ibytes),
-                                (int)((float)port_statistics->ibytes/(float)port_statistics->ipackets),
-                                port_statistics->ierrors,
-                                port_statistics->imissed, port_statistics->rx_nombuf);
+                                port_statistics.ipackets,
+                                bytes_format(port_statistics.ibytes),
+                                (int)((float)port_statistics.ibytes/(float)port_statistics.ipackets),
+                                port_statistics.ierrors,
+                                port_statistics.imissed, port_statistics.rx_nombuf);
                 printf("Per queue:\n");
                 for (j = 0; j < arguments.per_port_c_cores; j++) {
                         printf("  Queue %d RX: %lu RX-Error: %lu\n", j,
-                                        port_statistics->q_ipackets[j], port_statistics->q_errors[j]);
+                                        port_statistics.q_ipackets[j], port_statistics.q_errors[j]);
                 }
                 printf("  (%d queues hidden)\n", RTE_ETHDEV_QUEUE_STAT_CNTRS - arguments.per_port_c_cores);
 
@@ -541,7 +541,6 @@ int main(int argc, char *argv[]) {
         }
 
         //Setup statistics
-	port_statistics = malloc(sizeof(struct rte_eth_stats));
         nb_stat_update = 0;
 
 	//Initialize statistics timer
@@ -561,13 +560,12 @@ int main(int argc, char *argv[]) {
 		rte_timer_manage();
 	}
 
-	//Finalize
-	free(port_statistics);
-        free(cores_stats_write_list);
-
-        RTE_LOG(NOTICE, DPDKCAP, "Waiting for all cores to exit\n");
 	//Wait for all the cores to complete and exit
+        RTE_LOG(NOTICE, DPDKCAP, "Waiting for all cores to exit\n");
 	rte_eal_mp_wait_lcore();
+
+        //Finalize
+        free(cores_stats_write_list);
 
 	return 0;
 }
