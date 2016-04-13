@@ -381,10 +381,15 @@ static int write_core(struct core_config_write * config) {
 			bufptr = dequeued[i];
 			eth = rte_pktmbuf_mtod(bufptr, unsigned char*);
 			wire_packet_length = rte_pktmbuf_pkt_len(bufptr);
-                        // Truncate packet if needed
-			packet_length = MIN(arguments.snaplen,wire_packet_length);
+                        //Truncate packet if needed
+		        packet_length = MIN(arguments.snaplen,wire_packet_length);
 
-                        if(config->file_size_limit && file_size >= config->file_size_limit) {
+                        //Get time
+			gettimeofday(&tv, NULL);
+                      
+                        //Create a new file according to limits
+                        if( (config->rotate_seconds  && (uint32_t)(tv.tv_sec - file_start.tv_sec) >= config->rotate_seconds) || 
+                            (config->file_size_limit && file_size >= config->file_size_limit)) {
 	                          //Close pcap file and open new one
                                   lzowrite_free(&write_buffer);
                                   if(open_lzo_pcap(&write_buffer, config->output_file_template))
@@ -400,8 +405,8 @@ static int write_core(struct core_config_write * config) {
                         }
 
 
-			//Write block header
-			gettimeofday(&tv, NULL);
+			
+                        //Write block header
 			header.timestamp = (int32_t) tv.tv_sec;
 			header.microseconds = (int32_t) tv.tv_usec;
                         header.packet_length = packet_length;
