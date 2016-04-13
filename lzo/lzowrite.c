@@ -16,13 +16,12 @@ void fwrite_int32_be(void* ptr, FILE* out) {
 	fwrite(&((uint8_t*)(ptr))[0], sizeof(uint8_t), 1, out);
 }
 
-void* lzowrite_init(const char* filename) {
+int lzowrite_init(struct lzowrite_buffer * buffer, const char* filename) {
 	//Prepare the buffers
-	struct lzowrite_buffer* buffer = malloc(sizeof(struct lzowrite_buffer));
         buffer->output = fopen(filename, "w");
         if (buffer->output == NULL) {
           printf("LZO: Could not open %s : %d (%s)\n", filename, errno, strerror(errno));
-          return NULL;
+          return -1;
         }
         buffer->length = 0;
 
@@ -79,7 +78,7 @@ void* lzowrite_init(const char* filename) {
 
 	free(fheader);
 
-	return buffer;
+        return 0;
 }
 
 void lzowrite_wbuf(struct lzowrite_buffer* lzowrite_buffer) {
@@ -138,5 +137,4 @@ void lzowrite_free(struct lzowrite_buffer* lzowrite_buffer) {
 	fwrite(zeros, sizeof(unsigned char), 4, lzowrite_buffer->output);
 	fflush(lzowrite_buffer->output);
 	fclose(lzowrite_buffer->output);
-	free(lzowrite_buffer);
 }

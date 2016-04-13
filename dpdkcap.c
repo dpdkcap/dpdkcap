@@ -82,8 +82,6 @@
 
 #define RTE_LOGTYPE_DPDKCAP RTE_LOGTYPE_USER1
 
-
-
 #define STATS_PERIOD_MS 500
 #define ROTATING_CHAR "-\\|/"
 
@@ -95,8 +93,10 @@ static char args_doc[] = "";
 static struct argp_option options[] = {
                 { "output", 'o', "FILE", 0, "Output to FILE (don't add the extension) (default: output)", 0 },
                 { "statistics", 'S', 0, 0, "Print statistics every few seconds", 0 },
-                { "per_port_c_cores", 'c', "NUM", 0, "Number of cores per port used for capture (default: 1)", 0 },
-                { "num_w_cores", 'w', "NUM", 0, "Total number of cores used for writing (default: 1)", 0 },
+                { "per_port_c_cores", 'c', "NB_CORES_PER_PORT", 0, "Number of cores per port used for capture (default: 1)", 0 },
+                { "num_w_cores", 'w', "NB_CORES", 0, "Total number of cores used for writing (default: 1)", 0 },
+                { "rotate_seconds", 'G', "T", 0, "Create a new set of files every T seconds. The file name is thus suffixed using the first packet timestamp.", 0},
+                { "limit_file_size", 'C', "SIZE", 0, "Before writing a packet, check whether the target file excess SIZE bytes. If so, creates a new file suffixed by its index", 0},
                 { "portmask", 'p', "PORTMASK", 0, "Ethernet ports mask (default: 0x1)", 0 },
                 { "snaplen", 's', "LENGTH", 0, "Snap the capture to snaplen bytes (default: 65535).", 0 },
 		{ 0 } };
@@ -109,6 +109,8 @@ struct arguments {
 	unsigned int per_port_c_cores;
 	unsigned int num_w_cores;
         unsigned int snaplen;
+        unsigned int rotate_seconds;
+        unsigned int file_size_limit;
 };
 
 static error_t parse_opt(int key, char* arg, struct argp_state *state) {
@@ -143,7 +145,13 @@ static error_t parse_opt(int key, char* arg, struct argp_state *state) {
 	case 's':
 		arguments->snaplen = atoi(arg);
 		break;
-	default:
+        case 'G':
+                arguments->rotate_seconds = atoi(arg);
+                break;
+        case 'C':
+                arguments->file_size_limit = atoi(arg);
+                break;
+        default:
 		return ARGP_ERR_UNKNOWN;
 	}
 	return 0;
@@ -186,6 +194,8 @@ struct core_config_capture {
 struct core_config_write {
   char output_file_template[OUTPUT_FILE_LENGTH];
   struct core_stats_write * stats;
+  unsigned long rotate_seconds;
+  unsigned long file_size_limit;
 };
 
 static const struct rte_eth_conf port_conf_default = {
@@ -302,31 +312,30 @@ static int capture_core(struct core_config_capture * config) {
 	return 0;
 }
 
+static int open_lzo_pcap(struct  lzowrite_buffer * buffer, char * output_file) {
+        //Create new buffer
+	if(lzowrite_init(buffer, output_file)) return -1;
+
+        //Write pcap header
+	struct pcap_header* pcp = pcap_header_create(arguments.snaplen);
+	lzowrite32(buffer, pcp->magic_number);
+	lzowrite16(buffer, pcp->version_major);
+	lzowrite16(buffer, pcp->version_minor);
+	lzowrite32(buffer, pcp->thiszone);
+	lzowrite32(buffer, pcp->sigfigs);
+	lzowrite32(buffer, pcp->snaplen);
+	lzowrite32(buffer, pcp->network);
+	free(pcp);
+
+        return 0;
+}
+
+
 /*
  * Write the packets form the write ring into a pcap compressed file
  */
 static int write_core(struct core_config_write * config) {
-	//Setup write buffer
-	struct lzowrite_buffer* write_buffer = lzowrite_init(config->output_file_template);
-	if (!write_buffer) return -1;
-        signal(SIGINT, signal_handler);
-
-        RTE_LOG(INFO, DPDKCAP, "Core %d is writing in file : %s.\n", rte_lcore_id(), config->output_file_template);
-        memcpy(config->stats->output_file, config->output_file_template, OUTPUT_FILE_LENGTH);
-        config->stats->core_id = rte_lcore_id();
-
-
-        //Write pcap header
-	struct pcap_header* pcp = pcap_header_create(arguments.snaplen);
-	lzowrite32(write_buffer, pcp->magic_number);
-	lzowrite16(write_buffer, pcp->version_major);
-	lzowrite16(write_buffer, pcp->version_minor);
-	lzowrite32(write_buffer, pcp->thiszone);
-	lzowrite32(write_buffer, pcp->sigfigs);
-	lzowrite32(write_buffer, pcp->snaplen);
-	lzowrite32(write_buffer, pcp->network);
-	free(pcp);
-
+        struct lzowrite_buffer write_buffer;
 	unsigned char* eth;
 	unsigned int packet_length, wire_packet_length;
 	int result;
@@ -335,7 +344,25 @@ static int write_core(struct core_config_write * config) {
 	struct pcap_packet_header header;
 	struct timeval tv;
 
-	for (;;) {
+        unsigned int file_size = 0;
+        struct timeval file_start;
+
+        signal(SIGINT, signal_handler);
+
+        gettimeofday(&file_start, NULL);
+
+	//Open new lzo file
+        if(open_lzo_pcap(&write_buffer, config->output_file_template))
+            return -1;
+
+        //Log
+        RTE_LOG(INFO, DPDKCAP, "Core %d is writing in file : %s.\n", rte_lcore_id(), config->output_file_template);
+
+        //Update stats
+        memcpy(config->stats->output_file, config->output_file_template, OUTPUT_FILE_LENGTH);
+        config->stats->core_id = rte_lcore_id();
+
+        for (;;) {
 		if (unlikely(ctrlc_caught == 1)) {
 			break;
 		}
@@ -345,18 +372,33 @@ static int write_core(struct core_config_write * config) {
 			continue;
 		}
 
-		//Increase the packet counter
-		config->stats->packets += result;
-		config->stats->current_file_packets += result;
+                //Update stats
+                config->stats->packets += result;
 
-		int i;
+        	int i;
 		for (i = 0; i < result; i++) {
-			//Cast to packet
+              	        //Cast to packet
 			bufptr = dequeued[i];
 			eth = rte_pktmbuf_mtod(bufptr, unsigned char*);
 			wire_packet_length = rte_pktmbuf_pkt_len(bufptr);
-                        /* Truncate packet if needed */
+                        // Truncate packet if needed
 			packet_length = MIN(arguments.snaplen,wire_packet_length);
+
+                        if(config->file_size_limit && file_size >= config->file_size_limit) {
+	                          //Close pcap file and open new one
+                                  lzowrite_free(&write_buffer);
+                                  if(open_lzo_pcap(&write_buffer, config->output_file_template))
+                                    return -1;
+
+                                  //Update file data
+                                  file_size = 0;
+                                  gettimeofday(&file_start, NULL);
+
+                                  //Update stats
+                                  config->stats->current_file_packets = 0;
+                                  config->stats->current_file_bytes = 0;
+                        }
+
 
 			//Write block header
 			gettimeofday(&tv, NULL);
@@ -364,21 +406,27 @@ static int write_core(struct core_config_write * config) {
 			header.microseconds = (int32_t) tv.tv_usec;
                         header.packet_length = packet_length;
                         header.packet_length_wire = wire_packet_length;
-			lzowrite(write_buffer, &header, sizeof(struct pcap_packet_header));
+			lzowrite(&write_buffer, &header, sizeof(struct pcap_packet_header));
 
 			//Write content
-			lzowrite(write_buffer, eth, sizeof(char) * packet_length);
+			lzowrite(&write_buffer, eth, sizeof(char) * packet_length);
+
+                        //Update file data
+                        file_size += write_buffer.out_length;
+
+                        //Update stats
                         config->stats->bytes += packet_length;
-                        config->stats->compressed_bytes += write_buffer->out_length;
+                        config->stats->compressed_bytes += write_buffer.out_length;
+		        config->stats->current_file_packets ++;
                         config->stats->current_file_bytes += packet_length;
-                        config->stats->current_file_compressed_bytes += write_buffer->out_length;
+                        config->stats->current_file_compressed_bytes = file_size;
 
 			//Free buffer
 			rte_pktmbuf_free(bufptr);
 		}
 	}
 	//Close pcap file
-	lzowrite_free(write_buffer);
+        lzowrite_free(&write_buffer);
         free(config);
         RTE_LOG(INFO, DPDKCAP, "Closed writing core %d\n",rte_lcore_id());
 	return 0;
@@ -542,6 +590,8 @@ int main(int argc, char *argv[]) {
               //Configure writing core
               struct core_config_write * config = malloc(sizeof(struct core_config_write));
               config->stats = &(cores_stats_write_list[i]);
+              config->rotate_seconds = arguments.rotate_seconds;
+              config->file_size_limit = arguments.file_size_limit;
               snprintf(config->output_file_template, OUTPUT_FILE_LENGTH, "%s_%d.pcap.lzo", arguments.output, core_index);
 
               //Launch writing core

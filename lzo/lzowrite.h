@@ -51,6 +51,6 @@ struct lzowrite_block_header {
 void lzowrite32(struct lzowrite_buffer* lzowrite_buffer, uint32_t data);
 void lzowrite16(struct lzowrite_buffer* lzowrite_buffer, uint16_t data);
 void lzowrite_wbuf(struct lzowrite_buffer* lzowrite_buffer);
-void* lzowrite_init(const char* filename);
+int lzowrite_init(struct lzowrite_buffer * buffer, const char* filename);
 void lzowrite(struct lzowrite_buffer* lzowrite_buffer, void* src, size_t len);
 void lzowrite_free(struct lzowrite_buffer* lzowrite_buffer);
