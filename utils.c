@@ -15,7 +15,7 @@ char * bytes_format(unsigned long bytes) {
     return result;
 }
 
-char * str_replace(const char * src, const char * find, const char * replace)  {
+char * str_replace(const char * src, const char * find, const char * replace) {
   int find_len, replace_len, src_left_length;
   char * pos = strstr(src,find);
   if (pos) {
