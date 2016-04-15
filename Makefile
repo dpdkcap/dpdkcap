@@ -42,7 +42,7 @@ include $(RTE_SDK)/mk/rte.vars.mk
 APP=dpdkcap
 
 # all source are stored in SRCS-y
-SRCS-y := dpdkcap.c pcap.c utils.c lzo/minilzo.c lzo/lzowrite.c
+SRCS-y := dpdkcap.c core_write.c core_capture.c statistics.c pcap.c utils.c lzo/minilzo.c lzo/lzowrite.c
 
 CFLAGS += $(WERROR_FLAGS)
 

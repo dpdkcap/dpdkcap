@@ -1,8 +1,9 @@
+#ifndef DPDKCAP_PCAP_H
+#define DPDKCAP_PCAP_H
+
 #include <stdint.h>
 
 #define PCAP_SNAPLEN_DEFAULT 65535
-
-void* pcap_header_create(unsigned int snaplen);
 
 struct pcap_header {
 	uint32_t magic_number;  /* magic number */
@@ -20,3 +21,7 @@ struct pcap_packet_header {
 	uint32_t packet_length;
 	uint32_t packet_length_wire;
 };
+
+void pcap_header_init(struct pcap_header * header, unsigned int snaplen);
+
+#endif
