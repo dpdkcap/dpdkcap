@@ -1,4 +1,4 @@
-# dpdkcap
+# DPDKCap
 DPDK-based packet capture tool
 
 ## Getting started
@@ -42,4 +42,7 @@ Here are dpdkcap available options:
 Check out the [dpdk documentation](http://dpdk.org/doc/guides/index.html) for
 more information on EAL arguments.
 
+## Sofware License Agreements
+
+DPDKCap is distributed under the BSD License, see LICENSE.txt.
 
