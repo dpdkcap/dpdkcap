@@ -22,7 +22,7 @@
 #define RTE_LOGTYPE_DPDKCAP RTE_LOGTYPE_USER1
 
 /*
- * Change file name
+ * Change file name from template
  */
 static void format_from_template(
     char * filename,
@@ -74,6 +74,7 @@ static int open_lzo_pcap(
  * Write the packets form the write ring into a pcap compressed file
  */
 int write_core(const struct core_write_config * config) {
+  bool need_fallback;
   struct lzowrite_buffer write_buffer;
   unsigned char* eth;
   unsigned int packet_length, wire_packet_length;
@@ -116,9 +117,10 @@ int write_core(const struct core_write_config * config) {
       rte_lcore_id(), config->output_file_template);
 
   for (;;) {
-    if (unlikely(*(config->stop_condition))) {
+    if (unlikely(*(config->stop_condition) || need_fallback)) {
       break;
     }
+
     //Get packets from the ring
     result = rte_ring_dequeue_burst(config->ring,
         dequeued, DPDKCAP_WRITE_BURST_SIZE);
@@ -183,9 +185,18 @@ int write_core(const struct core_write_config * config) {
       header.packet_length = packet_length;
       header.packet_length_wire = wire_packet_length;
       lzowrite(&write_buffer, &header, sizeof(struct pcap_packet_header));
+      if (unlikely(written<0)) {
+        need_fallback = true;
+        continue;
+      }
+
 
       //Write content
       written = lzowrite(&write_buffer, eth, sizeof(char) * packet_length);
+      if (unlikely(written<0)) {
+        need_fallback = true;
+        continue;
+      }
 
       file_size += written;
 
@@ -202,7 +213,14 @@ int write_core(const struct core_write_config * config) {
   }
   //Close pcap file
   lzowrite_free(&write_buffer);
-  RTE_LOG(INFO, DPDKCAP, "Closed writing core %d\n",rte_lcore_id());
-  return 0;
+
+  if (need_fallback) {
+    RTE_LOG(ERR, DPDKCAP,  "An critical error occured. "\
+        "Closed writing core %d\n", rte_lcore_id());
+  } else {
+    RTE_LOG(INFO, DPDKCAP, "Closed writing core %d\n", rte_lcore_id());
+  }
+
+  return need_fallback;
 }
 
