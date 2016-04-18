@@ -5,7 +5,7 @@
 
 #define PCAP_SNAPLEN_DEFAULT 65535
 
-struct pcap_header {
+struct __attribute__((__packed__)) pcap_header {
 	uint32_t magic_number;  /* magic number */
 	uint16_t version_major; /* major version number */
 	uint16_t version_minor; /* minor version number */

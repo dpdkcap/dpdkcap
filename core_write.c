@@ -12,7 +12,6 @@
 #include <rte_branch_prediction.h>
 
 #include "lzo/lzowrite.h"
-#include "lzo/minilzo.h"
 #include "pcap.h"
 #include "utils.h"
 
@@ -58,17 +57,15 @@ static int open_lzo_pcap(
   struct pcap_header pcp;
 
   //Create new buffer
-  if(lzowrite_init(buffer, output_file)) return -1;
+  if(lzowrite_init(buffer, output_file)) {
+    RTE_LOG(ERR, DPDKCAP, "Core %d could not write into: %s\n",
+        rte_lcore_id(), output_file);
+    return -1;
+  }
 
   //Write pcap header
   pcap_header_init(&pcp, snaplen);
-  lzowrite32(buffer, pcp.magic_number);
-  lzowrite16(buffer, pcp.version_major);
-  lzowrite16(buffer, pcp.version_minor);
-  lzowrite32(buffer, pcp.thiszone);
-  lzowrite32(buffer, pcp.sigfigs);
-  lzowrite32(buffer, pcp.snaplen);
-  lzowrite32(buffer, pcp.network);
+  lzowrite(buffer, &pcp, sizeof(struct pcap_header));
 
   return 0;
 }
@@ -99,7 +96,7 @@ int write_core(const struct core_write_config * config) {
 
   //Init stats
   *(config->stats) = (struct core_write_stats) {
-      .core_id=rte_lcore_id(),
+    .core_id=rte_lcore_id(),
       .current_file_packets=0,
       .current_file_bytes=0,
       .current_file_compressed_bytes=0,
@@ -115,7 +112,7 @@ int write_core(const struct core_write_config * config) {
     return -1;
 
   //Log
-  RTE_LOG(INFO, DPDKCAP, "Core %d is writing in file : %s.\n",
+  RTE_LOG(INFO, DPDKCAP, "Core %d is writing using file template: %s.\n",
       rte_lcore_id(), config->output_file_template);
 
   for (;;) {
@@ -134,6 +131,7 @@ int write_core(const struct core_write_config * config) {
 
     int i;
     bool file_changed;
+    int written;
     for (i = 0; i < result; i++) {
       //Cast to packet
       bufptr = dequeued[i];
@@ -187,14 +185,13 @@ int write_core(const struct core_write_config * config) {
       lzowrite(&write_buffer, &header, sizeof(struct pcap_packet_header));
 
       //Write content
-      lzowrite(&write_buffer, eth, sizeof(char) * packet_length);
+      written = lzowrite(&write_buffer, eth, sizeof(char) * packet_length);
 
-      //Update file data
-      file_size += write_buffer.out_length;
+      file_size += written;
 
       //Update stats
       config->stats->bytes += packet_length;
-      config->stats->compressed_bytes += write_buffer.out_length;
+      config->stats->compressed_bytes += written;
       config->stats->current_file_packets ++;
       config->stats->current_file_bytes += packet_length;
       config->stats->current_file_compressed_bytes = file_size;

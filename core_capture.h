@@ -13,6 +13,12 @@ struct core_capture_config {
   uint8_t queue;
 };
 
+/* Statistics structure */
+struct core_capture_stats {
+  unsigned long packets;
+  unsigned long missed_packets;
+};
+
 /* Launches a capture task */
 int capture_core(const struct core_capture_config * config);
 
