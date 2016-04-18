@@ -24,7 +24,7 @@
 /*
  * Change file name
  */
-static void fillTemplate(
+static void format_from_template(
     char * filename,
     const char * template,
     const int core_id,
@@ -91,7 +91,7 @@ int write_core(const struct core_write_config * config) {
   gettimeofday(&file_start, NULL);
 
   //Update filename
-  fillTemplate(file_name, config->output_file_template,
+  format_from_template(file_name, config->output_file_template,
       rte_lcore_id(), file_count, &file_start);
 
   //Init stats
@@ -162,7 +162,7 @@ int write_core(const struct core_write_config * config) {
         file_size=0;
 
         //Change file name
-        fillTemplate(file_name, config->output_file_template,
+        format_from_template(file_name, config->output_file_template,
             rte_lcore_id(), file_count, &file_start);
 
         //Update stats
