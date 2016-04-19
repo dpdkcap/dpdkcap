@@ -50,32 +50,84 @@ static void format_from_template(
 /*
  * Opens a new lzowrite_buffer and write a new pcap header
  */
-static int open_lzo_pcap(
-    struct lzowrite_buffer * buffer,
-    char * output_file,
-    unsigned int snaplen) {
+static struct lzowrite_buffer * open_lzo_pcap(char * output_file,
+                                       unsigned int snaplen) {
   struct pcap_header pcp;
+  struct lzowrite_buffer * buffer;
+  FILE * file;
+  int retval;
 
-  //Create new buffer
-  if(lzowrite_init(buffer, output_file)) {
-    RTE_LOG(ERR, DPDKCAP, "Core %d could not write into: %s\n",
+  //Open file
+  file = fopen(output_file,"w");
+  if (unlikely(!file)) {
+    RTE_LOG(ERR, DPDKCAP, "Core %d could not open %s in write mode: %d (%s)\n",
+        rte_lcore_id(), output_file, errno, strerror(errno));
+    goto cleanup;
+  }
+
+  //Init lzo file
+  buffer = lzowrite_init(file);
+  if(unlikely(!buffer)) {
+    RTE_LOG(ERR, DPDKCAP, "Core %d could not init lzo in file: %s\n",
         rte_lcore_id(), output_file);
-    return -1;
+    goto cleanup_file;
   }
 
   //Write pcap header
   pcap_header_init(&pcp, snaplen);
-  lzowrite(buffer, &pcp, sizeof(struct pcap_header));
+  retval = lzowrite(buffer, &pcp, sizeof(struct pcap_header));
+  if(unlikely(retval)) {
+    RTE_LOG(ERR, DPDKCAP, "Core %d could not init lzo in file: %s\n",
+        rte_lcore_id(), output_file);
+    goto cleanup_lzo;
+  }
 
-  return 0;
+  return buffer;
+
+cleanup_lzo:
+  lzowrite_close(buffer);
+cleanup_file:
+  fclose(file);
+cleanup:
+  return NULL;
 }
+
+static int close_lzo_pcap(struct lzowrite_buffer * buffer) {
+  FILE * file = buffer->output;
+  int retval = 0;
+
+  /* Closes the lzo buffer */
+  retval = lzowrite_close(buffer);
+  if (unlikely(retval)) {
+    retval = -1;
+    RTE_LOG(ERR, DPDKCAP, "Could not close lzowrite_buffer.\n");
+  }
+
+  /* Flush stream */
+  retval = fflush(file);
+  if (unlikely(retval)) {
+    retval = -1;
+    RTE_LOG(ERR, DPDKCAP, "Could not flush file: %d (%s)\n",
+        errno, strerror(errno));
+  }
+
+  /* Close file */
+  retval = fclose(file);
+  if (unlikely(retval)) {
+    retval = -1;
+    RTE_LOG(ERR, DPDKCAP, "Could not close file: %d (%s)\n",
+        errno, strerror(errno));
+  }
+
+  return retval;
+}
+
 
 /*
  * Write the packets form the write ring into a pcap compressed file
  */
 int write_core(const struct core_write_config * config) {
-  bool need_fallback;
-  struct lzowrite_buffer write_buffer;
+  struct lzowrite_buffer * write_buffer;
   unsigned char* eth;
   unsigned int packet_length, wire_packet_length;
   int result;
@@ -83,6 +135,7 @@ int write_core(const struct core_write_config * config) {
   struct rte_mbuf* bufptr;
   struct pcap_packet_header header;
   struct timeval tv;
+  int retval = 0;
 
   char file_name[DPDKCAP_OUTPUT_FILENAME_LENGTH];
   unsigned int file_count = 0;
@@ -109,15 +162,18 @@ int write_core(const struct core_write_config * config) {
       DPDKCAP_OUTPUT_FILENAME_LENGTH);
 
   //Open new lzo file
-  if(open_lzo_pcap(&write_buffer, file_name, config->snaplen))
-    return -1;
+  write_buffer = open_lzo_pcap(file_name, config->snaplen);
+  if(unlikely(!write_buffer)) {
+    retval = -1;
+    goto cleanup;
+  }
 
   //Log
   RTE_LOG(INFO, DPDKCAP, "Core %d is writing using file template: %s.\n",
       rte_lcore_id(), config->output_file_template);
 
   for (;;) {
-    if (unlikely(*(config->stop_condition) || need_fallback)) {
+    if (unlikely(*(config->stop_condition))) {
       break;
     }
 
@@ -174,9 +230,14 @@ int write_core(const struct core_write_config * config) {
             DPDKCAP_OUTPUT_FILENAME_LENGTH);
 
         //Close pcap file and open new one
-        lzowrite_free(&write_buffer);
-        if(open_lzo_pcap(&write_buffer, file_name, config->snaplen))
-          return -1;
+        close_lzo_pcap(write_buffer);
+
+        //Reopen a file
+        write_buffer = open_lzo_pcap(file_name, config->snaplen);
+        if(unlikely(!write_buffer)) {
+          retval = -1;
+          goto cleanup;
+        }
       }
 
       //Write block header
@@ -184,18 +245,18 @@ int write_core(const struct core_write_config * config) {
       header.microseconds = (int32_t) tv.tv_usec;
       header.packet_length = packet_length;
       header.packet_length_wire = wire_packet_length;
-      lzowrite(&write_buffer, &header, sizeof(struct pcap_packet_header));
+      lzowrite(write_buffer, &header, sizeof(struct pcap_packet_header));
       if (unlikely(written<0)) {
-        need_fallback = true;
-        continue;
+         retval = -1;
+        goto cleanup;
       }
 
 
       //Write content
-      written = lzowrite(&write_buffer, eth, sizeof(char) * packet_length);
+      written = lzowrite(write_buffer, eth, sizeof(char) * packet_length);
       if (unlikely(written<0)) {
-        need_fallback = true;
-        continue;
+         retval = -1;
+        goto cleanup;
       }
 
       file_size += written;
@@ -211,16 +272,13 @@ int write_core(const struct core_write_config * config) {
       rte_pktmbuf_free(bufptr);
     }
   }
+
+cleanup:
   //Close pcap file
-  lzowrite_free(&write_buffer);
+  close_lzo_pcap(write_buffer);
 
-  if (need_fallback) {
-    RTE_LOG(ERR, DPDKCAP,  "An critical error occured. "\
-        "Closed writing core %d\n", rte_lcore_id());
-  } else {
-    RTE_LOG(INFO, DPDKCAP, "Closed writing core %d\n", rte_lcore_id());
-  }
+  RTE_LOG(INFO, DPDKCAP, "Closed writing core %d\n", rte_lcore_id());
 
-  return need_fallback;
+  return retval;
 }
 

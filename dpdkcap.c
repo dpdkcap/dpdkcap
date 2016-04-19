@@ -21,6 +21,8 @@
 #define MBUF_CACHE_SIZE 256 //0
 #define WRITE_RING_SIZE NUM_MBUFS
 
+#define MAX_LCORES 1000
+
 #define DPDKCAP_OUTPUT_TEMPLATE_LENGTH 2 * DPDKCAP_OUTPUT_FILENAME_LENGTH
 
 #define RTE_LOGTYPE_DPDKCAP RTE_LOGTYPE_USER1
@@ -198,7 +200,7 @@ static int port_init(
 /*
  * Handles signals
  */
-static bool should_stop = false;
+static volatile bool should_stop = false;
 static void signal_handler(int sig) {
   RTE_LOG(NOTICE, DPDKCAP, "Caught signal %s on core %u%s\n",
       strsignal(sig), rte_lcore_id(),
@@ -214,9 +216,14 @@ int main(int argc, char *argv[]) {
   signal(SIGINT, signal_handler);
   struct core_capture_config * cores_config_capture_list;
   struct core_write_config   * cores_config_write_list;
+  unsigned int lcoreid_list[MAX_LCORES];
+  unsigned int nb_lcores;
   struct rte_mempool *mbuf_pool;
   unsigned int port_id;
   unsigned int i,j;
+  unsigned int required_cores;
+  unsigned int core_index;
+  int result;
 
   /* Initialize the Environment Abstraction Layer (EAL). */
   int ret = rte_eal_init(argc, argv);
@@ -275,8 +282,7 @@ int main(int argc, char *argv[]) {
   RTE_LOG(INFO,DPDKCAP,"Using %u ports to listen on\n", nb_ports);
 
   /* Checks core number */
-  unsigned int required_cores=
-    (1+nb_ports*arguments.per_port_c_cores+arguments.num_w_cores);
+  required_cores=(1+nb_ports*arguments.per_port_c_cores+arguments.num_w_cores);
   if (rte_lcore_count() < required_cores) {
     rte_exit(EXIT_FAILURE, "Assign at least %d cores to dpdkcap.\n",
         required_cores);
@@ -298,7 +304,7 @@ int main(int argc, char *argv[]) {
       rte_align32pow2 (WRITE_RING_SIZE), rte_socket_id(), 0);
 
   /* Core index */
-  unsigned int core_index = rte_get_next_lcore(-1, 1, 0);
+  core_index = rte_get_next_lcore(-1, 1, 0);
 
   /* Init stats list */
   cores_stats_write_list=
@@ -310,6 +316,7 @@ int main(int argc, char *argv[]) {
   cores_config_capture_list=
     malloc(sizeof(struct core_capture_config)*arguments.per_port_c_cores
         *nb_ports);
+  nb_lcores = 0;
 
   /* Writing cores */
   for (i=0; i<arguments.num_w_cores; i++) {
@@ -329,7 +336,12 @@ int main(int argc, char *argv[]) {
           config, core_index) < 0)
       rte_exit(EXIT_FAILURE, "Could not launch writing process on lcore %d.\n",
           core_index);
-    core_index = rte_get_next_lcore(core_index, 1, 0);
+
+    //Add the core to the list
+    lcoreid_list[nb_lcores] = core_index;
+    nb_lcores++;
+
+    core_index = rte_get_next_lcore(core_index, SKIP_MASTER, 0);
   }
 
   /* For each port */
@@ -356,10 +368,14 @@ int main(int argc, char *argv[]) {
             config, core_index) < 0)
         rte_exit(EXIT_FAILURE, "Could not launch capture process on lcore "\
             "%d.\n",core_index);
-      core_index = rte_get_next_lcore(core_index, 1, 0);
+
+      //Add the core to the list
+      lcoreid_list[nb_lcores] = core_index;
+      nb_lcores++;
+
+      core_index = rte_get_next_lcore(core_index, SKIP_MASTER, 0);
     }
   }
-
 
   //Initialize statistics timer
   struct stats_data sd = {
@@ -376,18 +392,17 @@ int main(int argc, char *argv[]) {
     //End the capture when the interface returns
     start_stats_display(&sd);
     should_stop=true;
-  } else {
-    //Wait for ctrl+c
-    for (;;) {
-      if (unlikely(should_stop)) {
-        break;
-      }
-    }
   }
 
   //Wait for all the cores to complete and exit
   RTE_LOG(NOTICE, DPDKCAP, "Waiting for all cores to exit\n");
-  rte_eal_mp_wait_lcore();
+  for(i=0;i<nb_lcores;i++) {
+    result = rte_eal_wait_lcore(lcoreid_list[i]);
+    if (result < 0) {
+      RTE_LOG(ERR, DPDKCAP, "Core %d did not stop correctly.\n",
+          lcoreid_list[i]);
+    }
+  }
 
   //Finalize
   free(cores_stats_write_list);

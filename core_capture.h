@@ -8,7 +8,7 @@
 /* Core configuration structures */
 struct core_capture_config {
   struct rte_ring * ring;
-  bool * stop_condition;
+  bool volatile * stop_condition;
   uint8_t port;
   uint8_t queue;
 };

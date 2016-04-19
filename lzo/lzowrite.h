@@ -50,18 +50,20 @@ struct __attribute__((__packed__)) lzowrite_block_header {
 
 /*
  * Inits an lzo buffer with the given output file
- * Returns 0 on success, -errno is case of syscall error
+ * Returns the buffer on success, NULL on error
  */
-int lzowrite_init(struct lzowrite_buffer * buffer, const char* filename);
+struct lzowrite_buffer * lzowrite_init(FILE *);
 
 /*
  * Writes len bytes from src into the given lzowrite_buffer
- * Returns the number ob written bytes on success, -errno in case of syscall error.
+ * Returns the number of written bytes on success (might be 0),
+ * -1 on failure.
  */
 int lzowrite(struct lzowrite_buffer* lzowrite_buffer, void* src, size_t len);
 
 /*
- * Free the buffer and close the output file.
- * Returns 0 on success, or -errno on syscall error
+ * Flushes the buffer by writting the last bytes into the output stream, then
+ * close it. lzowrite_buffer should be freed at the end.
+ * Returns 0 on success, -1 on failure.
  */
-int lzowrite_free(struct lzowrite_buffer* lzowrite_buffer);
+int lzowrite_close(struct lzowrite_buffer* lzowrite_buffer);

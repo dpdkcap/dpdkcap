@@ -9,7 +9,7 @@
 /* Writing core configuration */
 struct core_write_config {
   struct rte_ring * ring;
-  bool * stop_condition;
+  bool volatile * stop_condition;
   char * output_file_template;
   struct core_write_stats * stats;
   unsigned int snaplen;
