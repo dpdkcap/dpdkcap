@@ -42,16 +42,16 @@ include $(RTE_SDK)/mk/rte.vars.mk
 APP=dpdkcap
 
 # all source are stored in SRCS-y
-SRCS-y := dpdkcap.c core_write.c core_capture.c statistics.c pcap.c utils.c lzo/minilzo/minilzo.c lzo/lzowrite.c
+SRCS-y := dpdkcap.c core_write.c core_capture.c statistics_ncurses.c pcap.c utils.c lzo/minilzo/minilzo.c lzo/lzowrite.c
 
 CFLAGS += $(WERROR_FLAGS)
-
+LDFLAGS += -lncurses
 # workaround for a gcc bug with noreturn attribute
 # http://gcc.gnu.org/bugzilla/show_bug.cgi?id=12603
 ifeq ($(CONFIG_RTE_TOOLCHAIN_GCC),y)
 CFLAGS_main.o += -Wno-return-type
 endif
 
-EXTRA_CFLAGS += -O3 -g -Wfatal-errors
+EXTRA_CFLAGS += -O3 -g -Wfatal-errors -lncurses
 
 include $(RTE_SDK)/mk/rte.extapp.mk

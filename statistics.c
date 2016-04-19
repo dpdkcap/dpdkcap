@@ -1,3 +1,5 @@
+#include "statistics.h"
+
 #include <signal.h>
 
 #include <rte_ethdev.h>
@@ -7,7 +9,6 @@
 
 #include "utils.h"
 
-#include "statistics.h"
 
 #define RTE_LOGTYPE_DPDKCAP RTE_LOGTYPE_USER1
 
