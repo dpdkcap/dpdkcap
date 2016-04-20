@@ -81,6 +81,7 @@ static void wcapture_stats(int height, int width,
     }
     wprintw(inner_win, "    (%d queues hidden)\n",
         RTE_ETHDEV_QUEUE_STAT_CNTRS - data->queue_per_port);
+    wprintw(inner_win, "\n");
   }
   wrefresh(inner_win);
 }
@@ -135,6 +136,7 @@ void start_stats_display(struct stats_data * data) {
   cbreak();
   noecho();
   keypad(stdscr, TRUE);
+  curs_set(0);
 
   //Initialize timers
   rte_timer_subsystem_init();
