@@ -407,6 +407,7 @@ int main(int argc, char *argv[]) {
     .port_list=portlist,
     .port_list_size=nb_ports,
     .queue_per_port=arguments.per_port_c_cores,
+    .log_file=arguments.log_file,
   };
 
   if (arguments.statistics && !should_stop) {

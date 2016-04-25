@@ -36,6 +36,7 @@ static void wglobal_stats(int height, int width,
   wrefresh(local_win);
 
   WINDOW *inner_win = newwin(height-2, width-2, starty+1, startx+1);
+  wprintw(inner_win,"Writing logs to: %s\n", data->log_file);
   wprintw(inner_win,"Entries free on ring: %u\n",
       rte_ring_free_count(data->ring));
   wprintw(inner_win,"Total packets written: %lu\n", total_packets);

@@ -11,6 +11,7 @@ struct stats_data {
   unsigned int * port_list;
   unsigned int port_list_size;
   unsigned int queue_per_port;
+  char * log_file;
 };
 
 
