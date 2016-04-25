@@ -19,17 +19,7 @@
 static void wglobal_stats(int height, int width,
     int starty, int startx,
     struct stats_data * data) {
-  long total_packets = 0;
-  long total_bytes = 0;
-  long total_compressedbytes = 0;
-  unsigned int i;
-
-  for (i=0; i<data->cores_write_stats_list_size; i++) {
-    total_packets += data->cores_stats_write_list[i].packets;
-    total_bytes += data->cores_stats_write_list[i].bytes;
-    total_compressedbytes += data->cores_stats_write_list[i].compressed_bytes;
-  }
-
+  // Display
   WINDOW *local_win = newwin(height, width, starty, startx);
   box(local_win, 0 , 0);
   mvwprintw(local_win,0,2,"Global stats");
@@ -39,12 +29,7 @@ static void wglobal_stats(int height, int width,
   wprintw(inner_win,"Writing logs to: %s\n", data->log_file);
   wprintw(inner_win,"Entries free on ring: %u\n",
       rte_ring_free_count(data->ring));
-  wprintw(inner_win,"Total packets written: %lu\n", total_packets);
-  wprintw(inner_win,"Total bytes written: %s", bytes_format(total_bytes));
-  wprintw(inner_win,"compressed to %s\n", bytes_format(total_compressedbytes));
-  wprintw(inner_win,"Compressed/uncompressed size ratio: 1 / %.2f\n",
-      total_compressedbytes?
-      (float)total_bytes/(float)total_compressedbytes:0.0f);
+
   wrefresh(inner_win);
 }
 
@@ -63,7 +48,7 @@ static void wcapture_stats(int height, int width,
   for (i=0; i<data->port_list_size; i++) {
     rte_eth_stats_get(data->port_list[i], &port_statistics);
 
-    wprintw(inner_win,"- PORT %d -\n", data->port_list[i]);
+    wprintw(inner_win,"PORT %d:\n", data->port_list[i]);
     wprintw(inner_win,"  RX Successful bytes: %s (avg: %d bytes/pkt)\n",
         bytes_format(port_statistics.ibytes),
         port_statistics.ipackets?(int)((float)port_statistics.ibytes/
@@ -89,19 +74,69 @@ static void wcapture_stats(int height, int width,
 
 static void wwrite_stats(int height, int width, int starty, int startx,
     struct stats_data * data) {
+  static long last_total_packets = 0,
+              last_total_bytes = 0,
+              last_total_compressedbytes = 0;
+  long total_packets = 0,
+       total_bytes = 0,
+       total_compressedbytes = 0;
+  long instant_packets,
+       instant_bytes,
+       instant_compressedbytes;
   unsigned int i;
+
+  // Calculate aggregated stats from writing cores
+  for (i=0; i<data->cores_write_stats_list_size; i++) {
+    total_packets += data->cores_stats_write_list[i].packets;
+    total_bytes += data->cores_stats_write_list[i].bytes;
+    total_compressedbytes += data->cores_stats_write_list[i].compressed_bytes;
+  }
+
+  // Calculate instant stats
+  instant_packets = (total_packets-last_total_packets)
+    *1000/STATS_PERIOD_MS;
+  instant_bytes = (total_bytes-last_total_bytes)
+    *1000/STATS_PERIOD_MS;
+  instant_compressedbytes = (total_compressedbytes-last_total_compressedbytes)
+    *1000/STATS_PERIOD_MS;
+
+  last_total_packets = total_packets;
+  last_total_bytes = total_bytes;
+  last_total_compressedbytes = total_compressedbytes;
+
+  // Display
   WINDOW *local_win = newwin(height, width, starty, startx);
   box(local_win, 0 , 0);
   mvwprintw(local_win,0,2,"Write stats");
+  wrefresh(local_win);
 
+  WINDOW *inner_win = newwin(height-2, width-2, starty+1, startx+1);
+  wprintw(inner_win,"Total packets written: %lu\n", total_packets);
+  wprintw(inner_win,"Total bytes written: %s", bytes_format(total_bytes));
+  wprintw(inner_win," compressed to %s\n",
+      bytes_format(total_compressedbytes));
+  wprintw(inner_win,"Compressed/uncompressed size ratio: 1 / %.2f\n\n",
+      total_compressedbytes?
+      (float)total_bytes/(float)total_compressedbytes:0.0f);
+
+  wprintw(inner_win,"Packets written/s: %lu/s\n", instant_packets);
+  wprintw(inner_win,"Bytes written/s: %s/s", bytes_format(instant_bytes));
+  wprintw(inner_win," compressed to %s/s\n",
+      bytes_format(instant_compressedbytes));
+  wprintw(inner_win,"Instant compressed/uncompressed size ratio: 1 / %.2f\n\n",
+      instant_compressedbytes?
+      (float)instant_bytes/(float)instant_compressedbytes:0.0f);
+
+
+  wprintw(inner_win,"  Per core stats:\n");
   for (i=0; i<data->cores_write_stats_list_size; i++) {
-    mvwprintw(local_win,i+1,1,"Writing core %d: %s ",
+    wprintw(inner_win, "Writing core %d: %s ",
         data->cores_stats_write_list[i].core_id,
         data->cores_stats_write_list[i].output_file);
-    wprintw(local_win,"(%s)", bytes_format(
+    wprintw(inner_win,"(%s)\n", bytes_format(
           data->cores_stats_write_list[i].current_file_compressed_bytes));
   }
-  wrefresh(local_win);
+  wrefresh(inner_win);
 }
 
 /*
@@ -120,6 +155,7 @@ static int printscreen(
     struct stats_data * data) {
     static int nb_updates = 0;
     nb_updates++;
+    clear();
     mvprintw(0,0,"%c - Press Ctrl+C to quit",ROTATING_CHAR[nb_updates%4]);
     refresh();
     wglobal_stats((LINES-1)/2, COLS/2, 1, 0, data);

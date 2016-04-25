@@ -53,7 +53,7 @@ static struct argp_option options[] = {
   { "snaplen", 's', "LENGTH", 0, "Snap the capture to snaplen bytes "\
     "(default: 65535).", 0 },
   { "logs", 700, "FILE", 0, "Writes the logs into FILE instead of "\
-    "standard output", 0 },
+    "stderr", 0 },
   { 0 } };
 
 struct arguments {
@@ -183,11 +183,8 @@ static int port_init(
   if (retval < 0)
     return retval;
 
-
-  /* Start the Ethernet port. */
-  retval = rte_eth_dev_start(port);
-  if (retval < 0)
-    return retval;
+  /* Enable RX in promiscuous mode for the Ethernet device. */
+  rte_eth_promiscuous_enable(port);
 
   /* Display the port MAC address. */
   struct ether_addr addr;
@@ -197,11 +194,19 @@ static int port_init(
       addr.addr_bytes[0], addr.addr_bytes[1], addr.addr_bytes[2],
       addr.addr_bytes[3], addr.addr_bytes[4], addr.addr_bytes[5]);
 
-  /* Enable RX in promiscuous mode for the Ethernet device. */
-  rte_eth_promiscuous_enable(port);
-
   return 0;
 }
+
+/*
+ * Starts given port
+ */
+static int port_start(uint8_t port) {
+  int retval = 0;
+  /* Start the Ethernet port. */
+  retval = rte_eth_dev_start(port);
+  return retval;
+}
+
 
 /*
  * Handles signals
@@ -231,7 +236,6 @@ int main(int argc, char *argv[]) {
   unsigned int core_index;
   int result;
   FILE * log_file;
-
 
   /* Initialize the Environment Abstraction Layer (EAL). */
   int ret = rte_eal_init(argc, argv);
@@ -370,8 +374,8 @@ int main(int argc, char *argv[]) {
   for (i = 0; i < nb_ports; i++) {
     port_id = portlist[i];
 
-    // Port init
-    int8_t retval = port_init(port_id, arguments.per_port_c_cores, mbuf_pool);
+    /* Port init */
+    int retval = port_init(port_id, arguments.per_port_c_cores, mbuf_pool);
     if (retval != 0) {
       rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8 "\n", port_id);
     }
@@ -396,6 +400,12 @@ int main(int argc, char *argv[]) {
       nb_lcores++;
 
       core_index = rte_get_next_lcore(core_index, SKIP_MASTER, 0);
+    }
+
+    /* Start the port once everything is ready to capture */
+    retval = port_start(port_id);
+    if (retval != 0) {
+      rte_exit(EXIT_FAILURE, "Cannot start port %"PRIu8 "\n", port_id);
     }
   }
 
