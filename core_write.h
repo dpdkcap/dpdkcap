@@ -10,8 +10,8 @@
 struct core_write_config {
   struct rte_ring * ring;
   bool volatile * stop_condition;
-  char * output_file_template;
   struct core_write_stats * stats;
+  char * output_file_template;
   unsigned int snaplen;
   unsigned long rotate_seconds;
   unsigned long file_size_limit;

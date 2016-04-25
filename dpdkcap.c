@@ -129,6 +129,7 @@ static unsigned int portlist[64];
 static unsigned int nb_ports;
 
 static struct core_write_stats * cores_stats_write_list;
+static struct core_capture_stats* cores_stats_capture_list;
 
 static const struct rte_eth_conf port_conf_default = {
   .rxmode = {
@@ -335,6 +336,9 @@ int main(int argc, char *argv[]) {
   /* Init stats list */
   cores_stats_write_list=
     malloc(sizeof(struct core_write_stats)*arguments.num_w_cores);
+  cores_stats_capture_list=
+    malloc(sizeof(struct core_capture_stats)*arguments.per_port_c_cores
+        *nb_ports);
 
   /* Init config lists */
   cores_config_write_list=
@@ -342,8 +346,8 @@ int main(int argc, char *argv[]) {
   cores_config_capture_list=
     malloc(sizeof(struct core_capture_config)*arguments.per_port_c_cores
         *nb_ports);
-  nb_lcores = 0;
 
+  nb_lcores = 0;
   /* Writing cores */
   for (i=0; i<arguments.num_w_cores; i++) {
 
@@ -351,8 +355,8 @@ int main(int argc, char *argv[]) {
     struct core_write_config * config = &(cores_config_write_list[i]);
     config->ring = write_ring;
     config->stop_condition = &should_stop;
-    config->output_file_template = arguments.output_file_template;
     config->stats = &(cores_stats_write_list[i]);
+    config->output_file_template = arguments.output_file_template;
     config->snaplen = arguments.snaplen;
     config->rotate_seconds = arguments.rotate_seconds;
     config->file_size_limit = arguments.file_size_limit;
@@ -387,6 +391,8 @@ int main(int argc, char *argv[]) {
         &(cores_config_capture_list[i*arguments.per_port_c_cores+j]);
       config->ring = write_ring;
       config->stop_condition = &should_stop;
+      config->stats =
+        &(cores_stats_capture_list[i*arguments.per_port_c_cores+j]);
       config->port = port_id;
       config->queue = j;
       //Launch capture core
@@ -414,6 +420,8 @@ int main(int argc, char *argv[]) {
     .ring = write_ring,
     .cores_stats_write_list = cores_stats_write_list,
     .cores_write_stats_list_size = arguments.num_w_cores,
+    .cores_stats_capture_list = cores_stats_capture_list,
+    .cores_capture_stats_list_size = arguments.per_port_c_cores*nb_ports,
     .port_list=portlist,
     .port_list_size=nb_ports,
     .queue_per_port=arguments.per_port_c_cores,

@@ -21,6 +21,13 @@ int capture_core(const struct core_capture_config * config) {
   RTE_LOG(INFO, DPDKCAP, "Core %u is capturing packets for port %u\n",
       rte_lcore_id(), config->port);
 
+  /* Init stats */
+  *(config->stats) = (struct core_capture_stats) {
+    .core_id=rte_lcore_id(),
+    .packets = 0,
+    .missed_packets = 0,
+  };
+
   /* Run until the application is quit or killed. */
   for (;;) {
     /* Stop condition */
@@ -34,6 +41,11 @@ int capture_core(const struct core_capture_config * config) {
     if (likely(nb_rx > 0)) {
       nb_rx_enqueued = rte_ring_enqueue_burst(config->ring, (void*) bufs,
           nb_rx);
+
+      /* Update stats */
+      config->stats->packets+=nb_rx_enqueued;
+      config->stats->missed_packets+=nb_rx-nb_rx_enqueued;
+
       /* Free whatever we can't put in the write ring */
       for (; nb_rx_enqueued < nb_rx; nb_rx_enqueued++) {
         rte_pktmbuf_free(bufs[nb_rx_enqueued]);

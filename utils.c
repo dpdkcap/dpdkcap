@@ -3,7 +3,10 @@
 #include <string.h>
 
 const char * bytes_unit[] = { "B", "KB", "MB", "GB", "TB" };
+const char * nb_unit[] = {"k", "M", "G"};
 char result[50];
+
+
 char * bytes_format(unsigned long bytes) {
     int i;
     double converted_bytes = bytes;
@@ -12,6 +15,19 @@ char * bytes_format(unsigned long bytes) {
     }
 
     sprintf(result, "%.2f %s", converted_bytes, bytes_unit[i]);
+    return result;
+}
+
+char * ul_format(unsigned long nb) {
+    int i;
+    double converted_nb = nb;
+    for (i = 0; i < 4 && nb >= 1000; i++, nb /= 1000) {
+        converted_nb = nb / 1000.0;
+    }
+    if (i>0)
+      sprintf(result, "%.2f%s", converted_nb, nb_unit[i-1]);
+    else
+      sprintf(result, "%d", (int) converted_nb);
     return result;
 }
 

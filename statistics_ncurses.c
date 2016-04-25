@@ -26,7 +26,10 @@ static void wglobal_stats(int height, int width,
   wrefresh(local_win);
 
   WINDOW *inner_win = newwin(height-2, width-2, starty+1, startx+1);
-  wprintw(inner_win,"Writing logs to: %s\n", data->log_file);
+  if(data->log_file)
+    wprintw(inner_win,"Writing logs to: %s\n", data->log_file);
+  else
+    wprintw(inner_win,"Writing logs to stderr\n");
   wprintw(inner_win,"Entries free on ring: %u\n",
       rte_ring_free_count(data->ring));
 
@@ -36,8 +39,12 @@ static void wglobal_stats(int height, int width,
 static void wcapture_stats(int height, int width,
     int starty, int startx,
     struct stats_data * data) {
+  static unsigned long * last_per_port_packets = NULL;
   unsigned int i,j;
   static struct rte_eth_stats port_statistics;
+
+  if (!last_per_port_packets) last_per_port_packets =
+    malloc(sizeof(unsigned long) * data->cores_capture_stats_list_size);
 
   WINDOW *local_win = newwin(height, width, starty, startx);
   box(local_win, 0 , 0);
@@ -53,19 +60,37 @@ static void wcapture_stats(int height, int width,
         bytes_format(port_statistics.ibytes),
         port_statistics.ipackets?(int)((float)port_statistics.ibytes/
           (float)port_statistics.ipackets):0);
-    wprintw(inner_win, "  RX Successful packets: %lu\n",
-        port_statistics.ipackets);
-    wprintw(inner_win, "  RX Unsuccessful packets: %lu\n",
-        port_statistics.ierrors);
-    wprintw(inner_win, "  RX Missed packets: %lu\n", port_statistics.imissed);
-    wprintw(inner_win, "  No MBUF: %lu\n", port_statistics.rx_nombuf);
+    wprintw(inner_win, "  RX Successful packets: %s\n",
+        ul_format(port_statistics.ipackets));
+    wprintw(inner_win, "  RX Unsuccessful packets: %s\n",
+        ul_format(port_statistics.ierrors));
+    wprintw(inner_win, "  RX Missed packets: %s\n",
+        ul_format(port_statistics.imissed));
+    wprintw(inner_win, "  No MBUF: %lu\n",
+        ul_format(port_statistics.rx_nombuf));
 
     wprintw(inner_win,"  Per queue:\n");
     for (j=0; j<data->queue_per_port; j++) {
-      wprintw(inner_win, "    Queue %d RX: %lu RX-Error: %lu\n", j,
-          port_statistics.q_ipackets[j], port_statistics.q_errors[j]);
+      wprintw(inner_win, "  - Queue %2d:       RX: %s", j,
+          ul_format(port_statistics.q_ipackets[j]));
+      wprintw(inner_win, " RX-Error: %s\n",
+          ul_format(port_statistics.q_errors[j]));
+      wprintw(inner_win, "     core %2d: Enqueued: %s",
+          data->cores_stats_capture_list[i*data->queue_per_port+j].core_id,
+          ul_format(data->cores_stats_capture_list[i*data->queue_per_port+j]
+            .packets));
+      wprintw(inner_win, "   Missed: %s\n",
+          ul_format(data->cores_stats_capture_list[i*data->queue_per_port+j]
+            .missed_packets));
+      wprintw(inner_win, "    Packets/s: %s\n",
+          ul_format((
+         data->cores_stats_capture_list[i*data->queue_per_port+j].packets-
+      last_per_port_packets[i*data->queue_per_port+j])*1000/STATS_PERIOD_MS));
+
+      last_per_port_packets[i*data->queue_per_port+j] =
+         data->cores_stats_capture_list[i*data->queue_per_port+j].packets;
     }
-    wprintw(inner_win, "    (%d queues hidden)\n",
+    wprintw(inner_win, "  (%d unused queues hidden)\n",
         RTE_ETHDEV_QUEUE_STAT_CNTRS - data->queue_per_port);
     wprintw(inner_win, "\n");
   }
@@ -111,7 +136,8 @@ static void wwrite_stats(int height, int width, int starty, int startx,
   wrefresh(local_win);
 
   WINDOW *inner_win = newwin(height-2, width-2, starty+1, startx+1);
-  wprintw(inner_win,"Total packets written: %lu\n", total_packets);
+  wprintw(inner_win,"Total packets written: %s\n",
+      ul_format(total_packets));
   wprintw(inner_win,"Total bytes written: %s", bytes_format(total_bytes));
   wprintw(inner_win," compressed to %s\n",
       bytes_format(total_compressedbytes));
@@ -119,7 +145,8 @@ static void wwrite_stats(int height, int width, int starty, int startx,
       total_compressedbytes?
       (float)total_bytes/(float)total_compressedbytes:0.0f);
 
-  wprintw(inner_win,"Packets written/s: %lu/s\n", instant_packets);
+  wprintw(inner_win,"Packets written/s: %s/s\n",
+      ul_format(instant_packets));
   wprintw(inner_win,"Bytes written/s: %s/s", bytes_format(instant_bytes));
   wprintw(inner_win," compressed to %s/s\n",
       bytes_format(instant_compressedbytes));
@@ -127,10 +154,9 @@ static void wwrite_stats(int height, int width, int starty, int startx,
       instant_compressedbytes?
       (float)instant_bytes/(float)instant_compressedbytes:0.0f);
 
-
   wprintw(inner_win,"  Per core stats:\n");
   for (i=0; i<data->cores_write_stats_list_size; i++) {
-    wprintw(inner_win, "Writing core %d: %s ",
+    wprintw(inner_win, "Writing core %2d: %s ",
         data->cores_stats_write_list[i].core_id,
         data->cores_stats_write_list[i].output_file);
     wprintw(inner_win,"(%s)\n", bytes_format(

@@ -9,14 +9,16 @@
 struct core_capture_config {
   struct rte_ring * ring;
   bool volatile * stop_condition;
+  struct core_capture_stats * stats;
   uint8_t port;
   uint8_t queue;
 };
 
 /* Statistics structure */
 struct core_capture_stats {
-  unsigned long packets;
-  unsigned long missed_packets;
+  int core_id;
+  unsigned long packets; //Packets successfully enqueued
+  unsigned long missed_packets; //Packets core could not enqueue
 };
 
 /* Launches a capture task */
