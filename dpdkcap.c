@@ -52,6 +52,8 @@ static struct argp_option options[] = {
   { "portmask", 'p', "PORTMASK", 0, "Ethernet ports mask (default: 0x1)", 0 },
   { "snaplen", 's', "LENGTH", 0, "Snap the capture to snaplen bytes "\
     "(default: 65535).", 0 },
+  { "logs", 700, "FILE", 0, "Writes the logs into FILE instead of "\
+    "standard output", 0 },
   { 0 } };
 
 struct arguments {
@@ -64,6 +66,7 @@ struct arguments {
   unsigned int snaplen;
   unsigned int rotate_seconds;
   unsigned int file_size_limit;
+  char * log_file;
 };
 
 static error_t parse_opt(int key, char* arg, struct argp_state *state) {
@@ -106,6 +109,9 @@ static error_t parse_opt(int key, char* arg, struct argp_state *state) {
       break;
     case 'C':
       arguments->file_size_limit = atoi(arg);
+      break;
+    case 700:
+      arguments->log_file = arg;
       break;
     default:
       return ARGP_ERR_UNKNOWN;
@@ -224,6 +230,8 @@ int main(int argc, char *argv[]) {
   unsigned int required_cores;
   unsigned int core_index;
   int result;
+  FILE * log_file;
+
 
   /* Initialize the Environment Abstraction Layer (EAL). */
   int ret = rte_eal_init(argc, argv);
@@ -232,10 +240,6 @@ int main(int argc, char *argv[]) {
 
   argc -= ret;
   argv += ret;
-
-  /* Set log level */
-  rte_set_log_type(RTE_LOGTYPE_DPDKCAP, 1);
-  rte_set_log_level(RTE_LOG_DEBUG);
 
   /* Parse arguments */
   arguments = (struct arguments) {
@@ -246,10 +250,29 @@ int main(int argc, char *argv[]) {
       .portmask = 0x1,
       .rotate_seconds = 0,
       .file_size_limit = 0,
+      .log_file=NULL,
   };
   strncpy(arguments.output_file_template,"output_\%COREID",
       DPDKCAP_OUTPUT_FILENAME_LENGTH);
   argp_parse(&argp, argc, argv, 0, 0, &arguments);
+
+  /* Set log level */
+  rte_set_log_type(RTE_LOGTYPE_DPDKCAP, 1);
+  rte_set_log_level(RTE_LOG_DEBUG);
+
+  /* Change log stream if needed */
+  if(arguments.log_file) {
+    log_file = fopen(arguments.log_file, "w");
+    if(!log_file) {
+    rte_exit(EXIT_FAILURE, "Error: Could not open log file: (%d) %s\n",
+        errno, strerror(errno));
+    }
+    result=rte_openlog_stream(log_file);
+    if(result) {
+    rte_exit(EXIT_FAILURE, "Error: Could not change log stream: (%d) %s\n",
+        errno, strerror(errno));
+    }
+  }
 
   /* Add suffixes to output if needed */
   if (!strstr(arguments.output_file_template,"\%COREID"))
@@ -258,7 +281,6 @@ int main(int argc, char *argv[]) {
       !strstr(arguments.output_file_template,"\%FCOUNT"))
     strcat(arguments.output_file_template,"_\%FCOUNT");
   strcat(arguments.output_file_template, ".pcap.lzo");
-
 
   /* Check if one port is available */
   if (rte_eth_dev_count() == 0)
