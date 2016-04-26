@@ -25,11 +25,6 @@ To build DPDKCap, run the following command into DPDKCap root directory:
 ```
 $ make
 ```
-Install it by running, as root (note that you will have to re-export `RTE_SDK`
-and `RTE_TARGET` for the root user):
-```
-# make install
-```
 
 ## 2. Usage
 
@@ -37,7 +32,7 @@ DPDKCap works as a standard DPDK application. Thus it needs Environment
 Abstraction Layer (EAL) arguments before dpdkcap specific ones:
 
 ```
-# dpdkcap [EAL args] -- [dpdkcap args]
+# ./build/dpdkcap [EAL args] -- [dpdkcap args]
 ```
 
 Check out the [dpdk documentation](http://dpdk.org/doc/guides/index.html) for
@@ -46,7 +41,7 @@ cores allocation and the `--huge-dir` one for providing huge pages directory.
 
 To get a list of DPDKCap specific available options, run:
 ```
-# dpdkcap [EAL args] -- --help
+# ./build/dpdkcap [EAL args] -- --help
 ```
 
 ### 2.1 Selecting cores for capture
