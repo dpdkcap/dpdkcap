@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
-#include "minilzo.h"
+
+#include "minilzo/minilzo.h"
 
 #define LZOWRITE_BUFFER_SIZE 32 * 1024
 #define LZOWRITE_OUT_BUFFER_SIZE (LZOWRITE_BUFFER_SIZE + LZOWRITE_BUFFER_SIZE / 16 + 64 + 3)
@@ -19,14 +20,12 @@ void fwrite_int32_be(void* ptr, FILE* out);
 
 struct lzowrite_buffer {
 	unsigned char buffer[LZOWRITE_BUFFER_SIZE];
-	unsigned char out_buffer[LZOWRITE_OUT_BUFFER_SIZE];
 	uint32_t length;
-	uint32_t out_length;
 	FILE* output;
 	lzo_align_t* workmemory;
 };
 
-struct lzowrite_file_header {
+struct __attribute__((__packed__)) lzowrite_file_header {
 	uint16_t version;
 	uint16_t library_version;
 	uint16_t needed_version;
@@ -40,7 +39,7 @@ struct lzowrite_file_header {
 	uint32_t file_header_checksum;
 };
 
-struct lzowrite_block_header {
+struct __attribute__((__packed__)) lzowrite_block_header {
 	uint32_t uncompressed_size;
 	uint32_t compressed_size;
 	uint32_t uncompressed_adler32;
@@ -48,9 +47,23 @@ struct lzowrite_block_header {
 	uint32_t compressed_adler32;
 	uint32_t compressed_crc32;
 };
-void lzowrite32(struct lzowrite_buffer* lzowrite_buffer, uint32_t data);
-void lzowrite16(struct lzowrite_buffer* lzowrite_buffer, uint16_t data);
-void lzowrite_wbuf(struct lzowrite_buffer* lzowrite_buffer);
-void* lzowrite_init(const char* filename);
-void lzowrite(struct lzowrite_buffer* lzowrite_buffer, void* src, size_t len);
-void lzowrite_free(struct lzowrite_buffer* lzowrite_buffer);
+
+/*
+ * Inits an lzo buffer with the given output file
+ * Returns the buffer on success, NULL on error
+ */
+struct lzowrite_buffer * lzowrite_init(FILE *);
+
+/*
+ * Writes len bytes from src into the given lzowrite_buffer
+ * Returns the number of written bytes on success (might be 0),
+ * -1 on failure.
+ */
+int lzowrite(struct lzowrite_buffer* lzowrite_buffer, void* src, size_t len);
+
+/*
+ * Flushes the buffer by writting the last bytes into the output stream, then
+ * close it. lzowrite_buffer should be freed at the end.
+ * Returns 0 on success, -1 on failure.
+ */
+int lzowrite_close(struct lzowrite_buffer* lzowrite_buffer);
