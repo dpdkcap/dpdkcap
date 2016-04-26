@@ -11,15 +11,12 @@ include $(RTE_SDK)/mk/rte.vars.mk
 APP=dpdkcap
 
 # all source are stored in SRCS-y
-SRCS-y := dpdkcap.c core_write.c core_capture.c statistics_ncurses.c pcap.c utils.c lzo/minilzo/minilzo.c lzo/lzowrite.c
+SRC_DIR= src
+SOURCES= dpdkcap.c core_write.c core_capture.c statistics_ncurses.c pcap.c utils.c lzo/minilzo/minilzo.c lzo/lzowrite.c
 
-CFLAGS += $(WERROR_FLAGS)
-LDFLAGS += -lncurses
+SRCS-y += $(addprefix $(SRC_DIR)/, $(SOURCES))
 
-ifeq ($(CONFIG_RTE_TOOLCHAIN_GCC),y)
-CFLAGS_main.o += -Wno-return-type
-endif
-
-EXTRA_CFLAGS += -O3 -g -Wfatal-errors
+CFLAGS += -O3 -g $(WERROR_FLAGS) -Wfatal-errors
+LDLIBS += -lncurses
 
 include $(RTE_SDK)/mk/rte.extapp.mk
