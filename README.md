@@ -1,57 +1,55 @@
 # DPDKCap
 
 DPDKCap is packet capture tool based on DPDK. It provides a multi-port,
-multi-core optimized capture with on the fly compression.
+multi-core optimized capture with on the fly compression. Thus particularly
+suiting captures at very high speed rates (more that 10Gpbs).
 
-## Software License Agreements
+## 1. Installation and platform configuration
 
-DPDKCap is distributed under the BSD License, see LICENSE.txt.
+### 1.1 Install DPDK
 
-## Getting started
+Please DPDK installation instruction, either from the [DPDK quick start
+instructions](http://dpdk.org/doc/quick-start) or from your operating system
+specific [Getting started
+guide](http://dpdk.org/doc/guides/linux_gsg/build_dpdk.html).
+
+### 1.2 Build and Install DPDKCap
+
+To build DPDKCap, you first need to set `RTE_SDK` and `RTE_TARGET`.
+```
+$ export RTE_SDK=... # Replace by your DPDK install directory
+$ export RTE_TARGET=x86_64-native-linuxapp-gcc # Replace by your target
+```
+
+To build DPDKCap, run the following command into DPDKCap root directory:
+```
+$ make
+```
+Install it by running, as root (note that you will have to re-export `RTE_SDK`
+and `RTE_TARGET` for the root user):
+```
+# make install
+```
+
+## 2. Usage
 
 DPDKCap works as a standard DPDK application. Thus it needs Environment
 Abstraction Layer (EAL) arguments before dpdkcap specific ones:
 
-```bash
-./dpdkcap [EAL args] -- [dpdkcap args]
 ```
-
-To get a list of available options, run
-```bash
-./dpdkcap [EAL args] -- --help
-```
-
-```
-  -c, --per_port_c_cores=NB_CORES_PER_PORT
-                             Number of cores per port used for capture
-                             (default: 1)
-  -C, --limit_file_size=SIZE Before writing a packet, check whether the target
-                             file excess SIZE bytes. If so, creates a new file.
-                             Use "%FCOUNT" within the output file template to
-                             index each new file.
-  -G, --rotate_seconds=T     Create a new set of files every T seconds. Use
-                             strftime formats within the output file template
-                             to rename each file accordingly.
-      --logs=FILE            Writes the logs into FILE instead of stderr
-  -o, --output=FILE          Output FILE template (don't add the extension).
-                             Use "%COREID" for inserting the lcore id into the
-                             file name (automatically added if not used).
-                             (default: output_%COREID)
-  -p, --portmask=PORTMASK    Ethernet ports mask (default: 0x1)
-  -s, --snaplen=LENGTH       Snap the capture to snaplen bytes (default:
-                             65535).
-  -S, --statistics           Print statistics every few seconds
-  -w, --num_w_cores=NB_CORES Total number of cores used for writing (default:
-                             1)
-  -?, --help                 Give this help list
-      --usage                Give a short usage message
-  -V, --version              Print program version
+# dpdkcap [EAL args] -- [dpdkcap args]
 ```
 
 Check out the [dpdk documentation](http://dpdk.org/doc/guides/index.html) for
-more information on EAL arguments.
+more information on EAL arguments. You will probably need the `-l` option for
+cores allocation and the `--huge-dir` one for providing huge pages directory.
 
-### Selecting captured cores
+To get a list of DPDKCap specific available options, run:
+```
+# dpdkcap [EAL args] -- --help
+```
+
+### 2.1 Selecting cores for capture
 
 From the available ports detected by DPDK, you can select ports to capture by
 using the `-p, --portmask` option. This option takes as argument an hexadecimal
@@ -60,7 +58,7 @@ port (portmask=0x1).
 
 For example, if you want to capture ports 1, 2 and 4, use: `--portmask 0xb`
 
-### Allocating lcores
+### 2.2 Assigning tasks to lcores
 
 DPDKCap assigns two different tasks to lcores:
 - Capturing cores enqueue packets from Ethernet ports queues into a main
@@ -70,8 +68,8 @@ DPDKCap assigns two different tasks to lcores:
   file.
 
 As a consequence, DPDKCap needs, at least, a single writing core and as many
-capturing cores as ports you want to capture. A last master core must be kept
-to display logs and display statistics. However, depending on your traffic
+capturing cores as ports you want to capture. Finally, a last lcore must be
+kept to handle logs and statistics. However, depending on your traffic
 bandwidth and your system capabilities, you might need to use more cores.
 
 The `-c, --per_port_c_cores` option allocates `NB_CORES_PER_PORT` capturing
@@ -86,7 +84,7 @@ cores than capture ones. This being said, size your storage system accordingly,
 as thousands cores could not achieve a full capture with a too low storage
 system bandwidth.
 
-### Limiting file size or duration
+### 2.3 Limiting file size or duration
 
 Depending on the data you want to capture, you might need to split the capture
 into several files. Two options are available to limit file size/duration:
@@ -98,7 +96,7 @@ You can specify the output file template using the `-o, --output` option. This
 is necessary with the `-G, --rotate_seconds` option if you do not want to erase
 the same file again and again. See the following section.
 
-### Output template
+### 2.4 Setting output template
 
 The `-o,--output` let you provide a template for the output file. This template
 is formatted according to the following tokens:
@@ -117,10 +115,13 @@ is formatted according to the following tokens:
   triggers a file change. These tokens are not mandatory with this option, but
   you might overwrite previously created files.
 
-### Other options
+### 2.5 Other options
 - `-s, --snaplen` limits the packet capture to LENGTH bytes.
-- `-S, --statistics` prints a set of running statistics while the capture is
+- `-S, --statistics` prints a set of statistics while the capture is
   running.
 - `--logs` output logs into the specified file instead of stderr.
 
+## 3. Software License Agreements
+
+DPDKCap is distributed under the BSD License, see LICENSE.txt.
 
