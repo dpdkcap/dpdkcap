@@ -158,32 +158,46 @@ static int port_init(
     port_conf.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_UDP | ETH_RSS_TCP;
   }
 
-  if (port >= rte_eth_dev_count())
+  if (port >= rte_eth_dev_count()) {
+    RTE_LOG(ERR, DPDKCAP, "Port identifier %d over the limit (max:%d)\n", port,
+       rte_eth_dev_count()-1);
     return -1;
+  }
 
   /* Configure the Ethernet device. */
   retval = rte_eth_dev_configure(port, rx_rings, 1, &port_conf);
-  if (retval != 0)
+  if (retval != 0) {
+    RTE_LOG(ERR, DPDKCAP, "rte_eth_dev_configure(...) returned with error "\
+        "code %d\n", retval);
     return retval;
+  }
 
   /* Allocate and set up RX queues. */
   for (q = 0; q < rx_rings; q++) {
     retval = rte_eth_rx_queue_setup(port, q, RX_RING_SIZE,
         rte_eth_dev_socket_id(port), NULL, mbuf_pool);
-    if (retval < 0)
+    if (retval < 0) {
+      RTE_LOG(ERR, DPDKCAP, "rte_eth_rx_queue_setup(...) returned with error "\
+          "code %d\n", retval);
       return retval;
+    }
     //Stats bindings
     retval = rte_eth_dev_set_rx_queue_stats_mapping (port, q, q);
-    if (retval < 0)
+    if (retval < 0) {
+      RTE_LOG(ERR, DPDKCAP, "rte_eth_dev_set_rx_queue_stats_mapping(...) "\
+          "returned with error code %d\n", retval);
       return retval;
+    }
   }
 
   /* Allocate one TX queue (unused) */
   retval = rte_eth_tx_queue_setup(port, 0, TX_RING_SIZE,
       rte_eth_dev_socket_id(port),NULL);
-  if (retval < 0)
+  if (retval < 0) {
+      RTE_LOG(ERR, DPDKCAP, "rte_eth_tx_queue_setup(...) "\
+          "returned with error code %d\n", retval);
     return retval;
-
+  }
   /* Enable RX in promiscuous mode for the Ethernet device. */
   rte_eth_promiscuous_enable(port);
 
