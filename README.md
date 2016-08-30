@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./media/DPDKCapLogo_400x260.png"/>
+<p/>
+
 # DPDKCap
 
 DPDKCap is packet capture tool based on DPDK. It provides a multi-port,
