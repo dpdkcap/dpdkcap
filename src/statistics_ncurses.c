@@ -66,7 +66,7 @@ static void wcapture_stats(int height, int width,
         ul_format(port_statistics.ierrors));
     wprintw(inner_win, "  RX Missed packets: %s\n",
         ul_format(port_statistics.imissed));
-    wprintw(inner_win, "  No MBUF: %lu\n",
+    wprintw(inner_win, "  No MBUF: %s\n",
         ul_format(port_statistics.rx_nombuf));
 
     wprintw(inner_win,"  Per queue:\n");
