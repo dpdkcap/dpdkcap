@@ -118,10 +118,8 @@ static int close_lzo_pcap(struct lzowrite_buffer * buffer) {
     RTE_LOG(ERR, DPDKCAP, "Could not close file: %d (%s)\n",
         errno, strerror(errno));
   }
-
   return retval;
 }
-
 
 /*
  * Write the packets form the write ring into a pcap compressed file
@@ -178,8 +176,8 @@ int write_core(const struct core_write_config * config) {
     }
 
     //Get packets from the ring
-    result = rte_ring_dequeue_burst(config->ring,
-        dequeued, DPDKCAP_WRITE_BURST_SIZE);
+    result = (rte_ring_dequeue_bulk(config->ring,
+        dequeued, DPDKCAP_WRITE_BURST_SIZE)<0)?0:DPDKCAP_WRITE_BURST_SIZE;
     if (result == 0) {
       continue;
     }
@@ -281,4 +279,3 @@ cleanup:
 
   return retval;
 }
-
