@@ -13,32 +13,20 @@
 
 #define RTE_LOGTYPE_DPDKCAP RTE_LOGTYPE_USER1
 
+#define GLOBAL_STATS_WINDOW_HEIGHT 10
 #define STATS_PERIOD_MS 500
 #define ROTATING_CHAR "-\\|/"
 
-static void wglobal_stats(int height, int width,
-    int starty, int startx,
-    struct stats_data * data) {
-  // Display
-  WINDOW *local_win = newwin(height, width, starty, startx);
-  box(local_win, 0 , 0);
-  mvwprintw(local_win,0,2,"Global stats");
-  wrefresh(local_win);
-
-  WINDOW *inner_win = newwin(height-2, width-2, starty+1, startx+1);
+static void wglobal_stats(WINDOW * window, struct stats_data * data) {
   if(data->log_file)
-    wprintw(inner_win,"Writing logs to: %s\n", data->log_file);
+    wprintw(window,"Writing logs to: %s\n", data->log_file);
   else
-    wprintw(inner_win,"Writing logs to stderr\n");
-  wprintw(inner_win,"Entries free on ring: %u\n",
+    wprintw(window,"Writing logs to stderr\n");
+  wprintw(window,"Entries free on ring: %u\n",
       rte_ring_free_count(data->ring));
-
-  wrefresh(inner_win);
 }
 
-static void wcapture_stats(int height, int width,
-    int starty, int startx,
-    struct stats_data * data) {
+static void wcapture_stats(WINDOW * window, struct stats_data * data) {
   static unsigned long * last_per_port_packets = NULL;
   unsigned int i,j;
   static struct rte_eth_stats port_statistics;
@@ -46,43 +34,39 @@ static void wcapture_stats(int height, int width,
   if (!last_per_port_packets) last_per_port_packets =
     malloc(sizeof(unsigned long) * data->cores_capture_stats_list_size);
 
-  WINDOW *local_win = newwin(height, width, starty, startx);
-  box(local_win, 0 , 0);
-  mvwprintw(local_win,0,2,"Capture stats");
-  wrefresh(local_win);
-
-  WINDOW *inner_win = newwin(height-2, width-2, starty+1, startx+1);
   for (i=0; i<data->port_list_size; i++) {
     rte_eth_stats_get(data->port_list[i], &port_statistics);
 
-    wprintw(inner_win,"PORT %d:\n", data->port_list[i]);
-    wprintw(inner_win,"  RX Successful bytes: %s (avg: %d bytes/pkt)\n",
+    wprintw(window,"PORT %d:\n", data->port_list[i]);
+    wprintw(window,"  RX Successful bytes: %s (avg: %d bytes/pkt)\n",
         bytes_format(port_statistics.ibytes),
         port_statistics.ipackets?(int)((float)port_statistics.ibytes/
           (float)port_statistics.ipackets):0);
-    wprintw(inner_win, "  RX Successful packets: %s\n",
+    wprintw(window, "  RX Successful packets: %s\n",
         ul_format(port_statistics.ipackets));
-    wprintw(inner_win, "  RX Unsuccessful packets: %s\n",
+    wprintw(window, "  RX Unsuccessful packets: %s\n",
         ul_format(port_statistics.ierrors));
-    wprintw(inner_win, "  RX Missed packets: %s\n",
+    wprintw(window, "  RX Missed packets: %s\n",
         ul_format(port_statistics.imissed));
-    wprintw(inner_win, "  No MBUF: %s\n",
+    wprintw(window, "  MBUF Allocation failures: %s\n",
         ul_format(port_statistics.rx_nombuf));
 
-    wprintw(inner_win,"  Per queue:\n");
+    wprintw(window,"  Per queue:\n");
     for (j=0; j<data->queue_per_port; j++) {
-      wprintw(inner_win, "  - Queue %2d:       RX: %s", j,
+      wprintw(window, "  - Queue %2d handled by core %2d:\n",
+          j,
+          data->cores_stats_capture_list[i*data->queue_per_port+j].core_id);
+      wprintw(window, "           HW:       RX: %s",
           ul_format(port_statistics.q_ipackets[j]));
-      wprintw(inner_win, " RX-Error: %s\n",
+      wprintw(window, "  RX-Error: %s\n",
           ul_format(port_statistics.q_errors[j]));
-      wprintw(inner_win, "     core %2d: Enqueued: %s",
-          data->cores_stats_capture_list[i*data->queue_per_port+j].core_id,
+      wprintw(window, "         Ring: Enqueued: %s",
           ul_format(data->cores_stats_capture_list[i*data->queue_per_port+j]
             .packets));
-      wprintw(inner_win, "   Missed: %s\n",
+      wprintw(window, "  Missed: %s\n",
           ul_format(data->cores_stats_capture_list[i*data->queue_per_port+j]
             .missed_packets));
-      wprintw(inner_win, "    Packets/s: %s\n",
+      wprintw(window, "    Packets/s: %s\n",
           ul_format((
          data->cores_stats_capture_list[i*data->queue_per_port+j].packets-
       last_per_port_packets[i*data->queue_per_port+j])*1000/STATS_PERIOD_MS));
@@ -90,18 +74,17 @@ static void wcapture_stats(int height, int width,
       last_per_port_packets[i*data->queue_per_port+j] =
          data->cores_stats_capture_list[i*data->queue_per_port+j].packets;
     }
-    wprintw(inner_win, "  (%d unused queues hidden)\n",
+    wprintw(window, "    (%d unused queues hidden)\n",
         RTE_ETHDEV_QUEUE_STAT_CNTRS - data->queue_per_port);
-    wprintw(inner_win, "\n");
+    wprintw(window, "\n");
   }
-  wrefresh(inner_win);
 }
 
-static void wwrite_stats(int height, int width, int starty, int startx,
-    struct stats_data * data) {
+static void wwrite_stats(WINDOW * window, struct stats_data * data) {
   static long last_total_packets = 0,
               last_total_bytes = 0,
               last_total_compressedbytes = 0;
+
   long total_packets = 0,
        total_bytes = 0,
        total_compressedbytes = 0;
@@ -129,40 +112,32 @@ static void wwrite_stats(int height, int width, int starty, int startx,
   last_total_bytes = total_bytes;
   last_total_compressedbytes = total_compressedbytes;
 
-  // Display
-  WINDOW *local_win = newwin(height, width, starty, startx);
-  box(local_win, 0 , 0);
-  mvwprintw(local_win,0,2,"Write stats");
-  wrefresh(local_win);
-
-  WINDOW *inner_win = newwin(height-2, width-2, starty+1, startx+1);
-  wprintw(inner_win,"Total packets written: %s\n",
+  wprintw(window,"Total packets written: %s\n",
       ul_format(total_packets));
-  wprintw(inner_win,"Total bytes written: %s", bytes_format(total_bytes));
-  wprintw(inner_win," compressed to %s\n",
+  wprintw(window,"Total bytes written: %s", bytes_format(total_bytes));
+  wprintw(window," compressed to %s\n",
       bytes_format(total_compressedbytes));
-  wprintw(inner_win,"Compressed/uncompressed size ratio: 1 / %.2f\n\n",
+  wprintw(window,"Compressed/uncompressed size ratio: 1 / %.2f\n\n",
       total_compressedbytes?
       (float)total_bytes/(float)total_compressedbytes:0.0f);
 
-  wprintw(inner_win,"Packets written/s: %s/s\n",
+  wprintw(window,"Packets written/s: %s/s\n",
       ul_format(instant_packets));
-  wprintw(inner_win,"Bytes written/s: %s/s", bytes_format(instant_bytes));
-  wprintw(inner_win," compressed to %s/s\n",
+  wprintw(window,"Bytes written/s: %s/s", bytes_format(instant_bytes));
+  wprintw(window," compressed to %s/s\n",
       bytes_format(instant_compressedbytes));
-  wprintw(inner_win,"Instant compressed/uncompressed size ratio: 1 / %.2f\n\n",
+  wprintw(window,"Instant compressed/uncompressed size ratio: 1 / %.2f\n\n",
       instant_compressedbytes?
       (float)instant_bytes/(float)instant_compressedbytes:0.0f);
 
-  wprintw(inner_win,"  Per core stats:\n");
+  wprintw(window,"  Per core stats:\n");
   for (i=0; i<data->cores_write_stats_list_size; i++) {
-    wprintw(inner_win, "Writing core %2d: %s ",
+    wprintw(window, "Writing core %2d: %s ",
         data->cores_stats_write_list[i].core_id,
         data->cores_stats_write_list[i].output_file);
-    wprintw(inner_win,"(%s)\n", bytes_format(
+    wprintw(window,"(%s)\n", bytes_format(
           data->cores_stats_write_list[i].current_file_compressed_bytes));
   }
-  wrefresh(inner_win);
 }
 
 /*
@@ -176,17 +151,83 @@ static void signal_handler(int sig) {
   should_stop = true;
 }
 
+
+
+static WINDOW * border_global, * border_write, * border_capture;
+static WINDOW * window_global, * window_write, * window_capture;
+
+static void mv_windows(void) {
+  wclear(border_global);
+  wclear(border_write);
+  wclear(border_capture);
+  wclear(window_global);
+  wclear(window_write);
+  wclear(window_capture);
+
+  wresize(border_global,  GLOBAL_STATS_WINDOW_HEIGHT, COLS/2);
+  wresize(border_write,   (LINES-1)-GLOBAL_STATS_WINDOW_HEIGHT, COLS/2);
+  wresize(border_capture, LINES-1, COLS/2);
+  wresize(window_global,  GLOBAL_STATS_WINDOW_HEIGHT-2, COLS/2-2);
+  wresize(window_write,   (LINES-1)-GLOBAL_STATS_WINDOW_HEIGHT-2, COLS/2-2);
+  wresize(window_capture, LINES-1-2, COLS/2-2);
+
+  mvderwin(border_global, 1, 0);
+  mvderwin(border_write,  GLOBAL_STATS_WINDOW_HEIGHT+1, 0);
+  mvderwin(border_capture,1, COLS/2);
+/*  mvderwin(window_global, 2, 1);
+  mvderwin(window_write,  GLOBAL_STATS_WINDOW_HEIGHT+2, 1);
+  mvderwin(window_capture,2, COLS/2+2);
+*/
+  mvderwin(window_global, 1, 1);
+  mvderwin(window_write,  1, 1);
+  mvderwin(window_capture,1, 1);
+
+
+}
+
+static void init_windows(void) {
+  border_global = subwin(stdscr,0,0,0,0);
+  border_write = subwin(stdscr,0,0,0,0);
+  border_capture = subwin(stdscr,0,0,0,0);
+
+  window_global = subwin(border_global,0,0,0,0);
+  window_write = subwin(border_write,0,0,0,0);
+  window_capture = subwin(border_capture,0,0,0,0);
+
+  scrollok(window_global,TRUE);
+  scrollok(window_capture,TRUE);
+  scrollok(window_write,TRUE);
+
+  mv_windows();
+}
+
 static int printscreen(
     __attribute__((unused))struct rte_timer * timer,
-    struct stats_data * data) {
+    __attribute__((unused))struct stats_data * data) {
     static int nb_updates = 0;
+
     nb_updates++;
+
     clear();
-    mvprintw(0,0,"%c - Press Ctrl+C to quit",ROTATING_CHAR[nb_updates%4]);
+    /* Move the windows */
+    mv_windows();
+
+    /* Write into the buffers */
+    mvprintw(0,0,"%c - Press q to quit",ROTATING_CHAR[nb_updates%4]);
+    box(border_global,0,0);
+    mvwprintw(border_global,0,2,"Global stats");
+    box(border_write,0,0);
+    mvwprintw(border_write,0,2,"Write stats");
+    box(border_capture,0,0);
+    mvwprintw(border_capture,0,2,"Capture stats");
+
+    wglobal_stats(window_global, data);
+    wwrite_stats(window_write, data);
+    wcapture_stats(window_capture, data);
+
+    /* Print on screen */
     refresh();
-    wglobal_stats((LINES-1)/2, COLS/2, 1, 0, data);
-    wwrite_stats((LINES-1)/2, COLS/2, (LINES-1)/2+1, 0, data);
-    wcapture_stats(LINES-1, COLS/2, 1, COLS/2+1, data);
+
     return 0;
 }
 
@@ -194,6 +235,7 @@ static struct rte_timer stats_timer;
 
 void start_stats_display(struct stats_data * data) {
   signal(SIGINT,signal_handler);
+  int ch;
 
   initscr();
   cbreak();
@@ -201,17 +243,35 @@ void start_stats_display(struct stats_data * data) {
   keypad(stdscr, TRUE);
   curs_set(0);
 
+  //Init windows
+  init_windows();
+
+  //Non blocking inputs
+  timeout(0);
+
   //Initialize timers
   rte_timer_subsystem_init();
   //Timer launch
   rte_timer_init (&(stats_timer));
   rte_timer_reset(&(stats_timer), 2000000ULL * STATS_PERIOD_MS, PERIODICAL,
       rte_lcore_id(), (void*) printscreen, data);
+
   //Wait for ctrl+c
   for (;;) {
     if (unlikely(should_stop)) {
       break;
     }
+    ch = getch();
+    switch(ch) {
+      case KEY_DOWN:
+        break;
+      case KEY_UP:
+        break;
+      case 'q':
+        should_stop = true;
+        break;
+    }
+
     rte_timer_manage();
   }
   rte_timer_stop(&(stats_timer));
