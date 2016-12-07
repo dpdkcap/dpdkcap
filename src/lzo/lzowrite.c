@@ -56,6 +56,9 @@ static int lzowrite_wbuf(struct lzowrite_buffer* lzowrite_buffer) {
 }
 
 struct lzowrite_buffer * lzowrite_init(FILE* file) {
+  static int initialized = 0;
+  int status;
+
   /* To be written */
   struct __attribute__((__packed__)) {
     const char magic[LZOWRITE_LZO_MAGIC_LEN];
@@ -65,6 +68,17 @@ struct lzowrite_buffer * lzowrite_init(FILE* file) {
   };
   struct lzowrite_buffer * buffer = NULL;
   int written;
+
+  //Initialize minilzo if needed
+  if(!initialized) {
+    status = lzo_init();
+    if (status) {
+      RTE_LOG(ERR, LZO, "Could not initialize minilzo: %d\n",
+          status);
+      return NULL;
+    }
+    initialized = 1;
+  }
 
   //Prepare the buffers
   if (unlikely(!file || !__fwritable(file))) {
