@@ -12,6 +12,7 @@ struct core_write_config {
   bool volatile * stop_condition;
   struct core_write_stats * stats;
   char * output_file_template;
+  int no_compression;
   unsigned int snaplen;
   unsigned long rotate_seconds;
   unsigned long file_size_limit;

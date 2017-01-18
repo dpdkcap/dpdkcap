@@ -48,6 +48,50 @@ static void format_from_template(
 }
 
 /*
+ * Open pcap file for writing
+ */
+static FILE * open_pcap(char * output_file) {
+  FILE * file;
+  //Open file
+  file = fopen(output_file,"w");
+  if (unlikely(!file)) {
+    RTE_LOG(ERR, DPDKCAP, "Core %d could not open %s in write mode: %d (%s)\n",
+        rte_lcore_id(), output_file, errno, strerror(errno));
+  }
+
+  return file;
+}
+
+/*
+ * Write into a pcap file
+ */
+static int write_pcap(FILE * file, void * src, size_t len) {
+  size_t retval;
+  // Write file
+  retval = fwrite(src, sizeof(char), len, file);
+  if (unlikely(retval != len)) {
+    RTE_LOG(ERR, DPDKCAP, "Could not write into file: %d (%s)\n",
+        errno, strerror(errno));
+    return -1;
+  }
+  return 0;
+}
+
+/*
+ * Close and free a pcap file
+ */
+static int close_pcap(FILE * file) {
+  int retval;
+  // Close file
+  retval = fclose(file);
+  if (unlikely(retval)) {
+    RTE_LOG(ERR, DPDKCAP, "Could not close file: %d (%s)\n",
+        errno, strerror(errno));
+  }
+  return retval;
+}
+
+/*
  * Allocates a new lzowrite_buffer from the given file
  */
 static struct lzowrite_buffer * open_lzo_pcap(char * output_file) {
@@ -82,31 +126,24 @@ cleanup:
  */
 static int close_lzo_pcap(struct lzowrite_buffer * buffer) {
   FILE * file = buffer->output;
-  int retval = 0;
+  int retval;
 
   /* Closes the lzo buffer */
   retval = lzowrite_close(buffer);
   if (unlikely(retval)) {
-    retval = -1;
     RTE_LOG(ERR, DPDKCAP, "Could not close lzowrite_buffer.\n");
-  }
-
-  /* Flush stream */
-  retval = fflush(file);
-  if (unlikely(retval)) {
-    retval = -1;
-    RTE_LOG(ERR, DPDKCAP, "Could not flush file: %d (%s)\n",
-        errno, strerror(errno));
+    return retval;
   }
 
   /* Close file */
   retval = fclose(file);
   if (unlikely(retval)) {
-    retval = -1;
     RTE_LOG(ERR, DPDKCAP, "Could not close file: %d (%s)\n",
         errno, strerror(errno));
+    return retval;
   }
-  return retval;
+
+  return 0;
 }
 
 /*
@@ -124,17 +161,24 @@ int write_core(const struct core_write_config * config) {
   struct pcap_header pcp;
   int retval = 0;
   int written;
-  void * (*file_open_func)(char*) = (void*(*)(char*)) open_lzo_pcap;
-  int (*file_write_func)(void*, void*, int) =
-    (int (*)(void*, void*, int)) lzowrite;
-  int (*file_close_func)(void*) = (int (*)(void*)) close_lzo_pcap;
-
+  void * (*file_open_func)(char*);
+  int (*file_write_func)(void*, void*, int);
+  int (*file_close_func)(void*);
 
   char file_name[DPDKCAP_OUTPUT_FILENAME_LENGTH];
   unsigned int file_count = 0;
   unsigned int file_size = 0;
   struct timeval file_start;
 
+  if(config->no_compression) {
+    file_open_func  = (void*(*)(char*)) open_pcap;
+    file_write_func = (int (*)(void*, void*, int)) write_pcap;
+    file_close_func = (int (*)(void*)) close_pcap;
+  } else {
+    file_open_func  = (void*(*)(char*)) open_lzo_pcap;
+    file_write_func = (int (*)(void*, void*, int)) lzowrite;
+    file_close_func = (int (*)(void*)) close_lzo_pcap;
+  }
   gettimeofday(&file_start, NULL);
 
   //Update filename

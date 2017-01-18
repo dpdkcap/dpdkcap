@@ -37,11 +37,11 @@ static struct argp_option options[] = {
     "extension). Use \"\%COREID\" for inserting the lcore id into the file " \
       "name (automatically added if not used). (default: output_\%COREID)"
       , 0 },
-  { "statistics", 'S', 0, 0, "Print statistics every few seconds", 0 },
+  { "statistics", 'S', 0, 0, "Print statistics every few seconds.", 0 },
   { "per_port_c_cores", 'c', "NB_CORES_PER_PORT", 0, "Number of cores per " \
     "port used for capture (default: 1)", 0 },
   { "num_w_cores", 'w', "NB_CORES", 0, "Total number of cores used for "\
-    "writing (default: 1)", 0 },
+    "writing (default: 1).", 0 },
   { "rotate_seconds", 'G', "T", 0, "Create a new set of files every T "\
     "seconds. Use strftime formats within the output file template to rename "\
       "each file accordingly.", 0},
@@ -49,11 +49,12 @@ static struct argp_option options[] = {
     "whether the target file excess SIZE bytes. If so, creates a new file. " \
       "Use \"\%FCOUNT\" within the output file template to index each new "\
       "file.", 0},
-  { "portmask", 'p', "PORTMASK", 0, "Ethernet ports mask (default: 0x1)", 0 },
+  { "portmask", 'p', "PORTMASK", 0, "Ethernet ports mask (default: 0x1).", 0 },
   { "snaplen", 's', "LENGTH", 0, "Snap the capture to snaplen bytes "\
     "(default: 65535).", 0 },
   { "logs", 700, "FILE", 0, "Writes the logs into FILE instead of "\
-    "stderr", 0 },
+    "stderr.", 0 },
+  { "no-compression", 701, 0, 0, "Do not compress capture files.", 0 },
   { 0 } };
 
 struct arguments {
@@ -63,6 +64,7 @@ struct arguments {
   int statistics;
   unsigned int per_port_c_cores;
   unsigned int num_w_cores;
+  int no_compression;
   unsigned int snaplen;
   unsigned int rotate_seconds;
   unsigned int file_size_limit;
@@ -112,6 +114,9 @@ static error_t parse_opt(int key, char* arg, struct argp_state *state) {
       break;
     case 700:
       arguments->log_file = arg;
+      break;
+    case 701:
+      arguments->no_compression = 1;
       break;
     default:
       return ARGP_ERR_UNKNOWN;
@@ -266,6 +271,7 @@ int main(int argc, char *argv[]) {
     .statistics = 0,
       .per_port_c_cores = 1,
       .num_w_cores = 1,
+      .no_compression = 0,
       .snaplen = PCAP_SNAPLEN_DEFAULT,
       .portmask = 0x1,
       .rotate_seconds = 0,
@@ -300,7 +306,13 @@ int main(int argc, char *argv[]) {
   if (arguments.file_size_limit &&
       !strstr(arguments.output_file_template,"\%FCOUNT"))
     strcat(arguments.output_file_template,"_\%FCOUNT");
-  strcat(arguments.output_file_template, ".pcap.lzo");
+
+  strcat(arguments.output_file_template, ".pcap");
+
+  if(!arguments.no_compression)
+    strcat(arguments.output_file_template, ".lzo");
+
+
 
   /* Check if one port is available */
   if (rte_eth_dev_count() == 0)
@@ -372,6 +384,7 @@ int main(int argc, char *argv[]) {
     config->stop_condition = &should_stop;
     config->stats = &(cores_stats_write_list[i]);
     config->output_file_template = arguments.output_file_template;
+    config->no_compression = arguments.no_compression;
     config->snaplen = arguments.snaplen;
     config->rotate_seconds = arguments.rotate_seconds;
     config->file_size_limit = arguments.file_size_limit;
