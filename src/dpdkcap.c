@@ -17,7 +17,7 @@
 #define RX_RING_SIZE 1024 //256
 #define TX_RING_SIZE 512 //512
 
-#define NUM_MBUFS 131072 //2048
+#define NUM_MBUFS 2048
 #define MBUF_CACHE_SIZE 256 //0
 #define WRITE_RING_SIZE NUM_MBUFS
 
@@ -183,10 +183,11 @@ static int port_init(
     }
     //Stats bindings
     retval = rte_eth_dev_set_rx_queue_stats_mapping (port, q, q);
-    if (retval < 0) {
-      RTE_LOG(ERR, DPDKCAP, "rte_eth_dev_set_rx_queue_stats_mapping(...) "\
+    if (retval != 0) {
+      RTE_LOG(WARNING, DPDKCAP, "rte_eth_dev_set_rx_queue_stats_mapping(...) "\
           "returned with error code %d\n", retval);
-      return retval;
+      RTE_LOG(WARNING, DPDKCAP, "The queues statistics mapping failed. The "\
+         "displayed queue statistics are thus unreliable.\n");
     }
   }
 

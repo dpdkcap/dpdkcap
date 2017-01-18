@@ -43,9 +43,9 @@ int capture_core(const struct core_capture_config * config) {
           nb_rx);
 
       /* Update stats */
-      if(nb_rx_enqueued == 0) {
+      if(nb_rx_enqueued == 0 && nb_rx_enqueued == -EDQUOT) {
         config->stats->packets+=nb_rx;
-      }else {
+      } else {
         config->stats->missed_packets+=nb_rx;
         /* Free whatever we can't put in the write ring */
         for (nb_rx_enqueued=0; nb_rx_enqueued < nb_rx; nb_rx_enqueued++) {
