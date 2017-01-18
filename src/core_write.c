@@ -48,7 +48,7 @@ static void format_from_template(
 }
 
 /*
- * Opens a new lzowrite_buffer and write a new pcap header
+ * Allocates a new lzowrite_buffer from the given file
  */
 static struct lzowrite_buffer * open_lzo_pcap(char * output_file) {
   struct lzowrite_buffer * buffer;
@@ -77,6 +77,9 @@ cleanup:
   return NULL;
 }
 
+/*
+ * Free a lzowrite_buffer
+ */
 static int close_lzo_pcap(struct lzowrite_buffer * buffer) {
   FILE * file = buffer->output;
   int retval = 0;
@@ -110,7 +113,7 @@ static int close_lzo_pcap(struct lzowrite_buffer * buffer) {
  * Write the packets form the write ring into a pcap compressed file
  */
 int write_core(const struct core_write_config * config) {
-  struct lzowrite_buffer * write_buffer;
+  void * write_buffer;
   unsigned char* eth;
   unsigned int packet_length, wire_packet_length;
   int result;
@@ -121,6 +124,11 @@ int write_core(const struct core_write_config * config) {
   struct pcap_header pcp;
   int retval = 0;
   int written;
+  void * (*file_open_func)(char*) = (void*(*)(char*)) open_lzo_pcap;
+  int (*file_write_func)(void*, void*, int) =
+    (int (*)(void*, void*, int)) lzowrite;
+  int (*file_close_func)(void*) = (int (*)(void*)) close_lzo_pcap;
+
 
   char file_name[DPDKCAP_OUTPUT_FILENAME_LENGTH];
   unsigned int file_count = 0;
@@ -149,15 +157,15 @@ int write_core(const struct core_write_config * config) {
   //Init the common pcap header
   pcap_header_init(&pcp, config->snaplen);
 
-  //Open new lzo file
-  write_buffer = open_lzo_pcap(file_name);
+  //Open new file
+  write_buffer = file_open_func(file_name);
   if(unlikely(!write_buffer)) {
     retval = -1;
     goto cleanup;
   }
 
   //Write pcap header
-  written = lzowrite(write_buffer, &pcp, sizeof(struct pcap_header));
+  written = file_write_func(write_buffer, &pcp, sizeof(struct pcap_header));
   if(unlikely(written<0)) {
     retval = -1;
     goto cleanup;
@@ -224,17 +232,18 @@ int write_core(const struct core_write_config * config) {
             DPDKCAP_OUTPUT_FILENAME_LENGTH);
 
         //Close pcap file and open new one
-        close_lzo_pcap(write_buffer);
+        file_close_func(write_buffer);
 
         //Reopen a file
-        write_buffer = open_lzo_pcap(file_name);
+        write_buffer = file_open_func(file_name);
         if(unlikely(!write_buffer)) {
           retval = -1;
           goto cleanup;
         }
 
         //Write pcap header
-        written = lzowrite(write_buffer, &pcp, sizeof(struct pcap_header));
+        written = file_write_func(write_buffer, &pcp,
+            sizeof(struct pcap_header));
         if(unlikely(written<0)) {
           retval = -1;
           goto cleanup;
@@ -246,7 +255,7 @@ int write_core(const struct core_write_config * config) {
       header.microseconds = (int32_t) tv.tv_usec;
       header.packet_length = packet_length;
       header.packet_length_wire = wire_packet_length;
-      written = lzowrite(write_buffer, &header,
+      written = file_write_func(write_buffer, &header,
           sizeof(struct pcap_packet_header));
       if (unlikely(written<0)) {
          retval = -1;
@@ -254,7 +263,7 @@ int write_core(const struct core_write_config * config) {
       }
 
       //Write content
-      written = lzowrite(write_buffer, eth, sizeof(char) * packet_length);
+      written = file_write_func(write_buffer, eth, sizeof(char) * packet_length);
       if (unlikely(written<0)) {
          retval = -1;
         goto cleanup;
@@ -276,7 +285,7 @@ int write_core(const struct core_write_config * config) {
 
 cleanup:
   //Close pcap file
-  close_lzo_pcap(write_buffer);
+  file_close_func(write_buffer);
 
   RTE_LOG(INFO, DPDKCAP, "Closed writing core %d\n", rte_lcore_id());
 
