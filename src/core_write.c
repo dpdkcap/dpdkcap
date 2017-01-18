@@ -153,7 +153,7 @@ int write_core(const struct core_write_config * config) {
   void * write_buffer;
   unsigned char* eth;
   unsigned int packet_length, wire_packet_length;
-  int result;
+  int to_write;
   void* dequeued[DPDKCAP_WRITE_BURST_SIZE];
   struct rte_mbuf* bufptr;
   struct pcap_packet_header header;
@@ -220,23 +220,26 @@ int write_core(const struct core_write_config * config) {
       rte_lcore_id(), config->output_file_template);
 
   for (;;) {
-    if (unlikely(*(config->stop_condition))) {
+    if (unlikely(*(config->stop_condition) && rte_ring_empty(config->ring))) {
       break;
     }
 
     //Get packets from the ring
-    result = (rte_ring_dequeue_bulk(config->ring,
-        dequeued, DPDKCAP_WRITE_BURST_SIZE)<0)?0:DPDKCAP_WRITE_BURST_SIZE;
-    if (result <= 0) {
-      continue;
+    to_write = rte_ring_dequeue_bulk(config->ring, dequeued,
+        DPDKCAP_WRITE_BURST_SIZE);
+    if (likely(to_write==0)) {
+      to_write = DPDKCAP_WRITE_BURST_SIZE;
+    } else {
+      to_write = rte_ring_dequeue_burst(config->ring, dequeued,
+          DPDKCAP_WRITE_BURST_SIZE);
     }
 
     //Update stats
-    config->stats->packets += result;
+    config->stats->packets += to_write;
 
     int i;
     bool file_changed;
-    for (i = 0; i < result; i++) {
+    for (i = 0; i < to_write; i++) {
       //Cast to packet
       bufptr = dequeued[i];
       eth = rte_pktmbuf_mtod(bufptr, unsigned char*);
@@ -302,14 +305,14 @@ int write_core(const struct core_write_config * config) {
       written = file_write_func(write_buffer, &header,
           sizeof(struct pcap_packet_header));
       if (unlikely(written<0)) {
-         retval = -1;
+        retval = -1;
         goto cleanup;
       }
 
       //Write content
       written = file_write_func(write_buffer, eth, sizeof(char) * packet_length);
       if (unlikely(written<0)) {
-         retval = -1;
+        retval = -1;
         goto cleanup;
       }
 
