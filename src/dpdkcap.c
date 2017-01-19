@@ -78,6 +78,7 @@ static error_t parse_opt(int key, char* arg, struct argp_state *state) {
   switch (key) {
     case 'p':
       /* parse hexadecimal string */
+      errno = 0; // strtoul does not fix errno to 0 on success
       arguments->portmask = strtoul(arg, &end, 16);
       if (errno != 0 || *end != '\0' ||
           (arguments->portmask == ULONG_MAX && errno == ERANGE)) {
