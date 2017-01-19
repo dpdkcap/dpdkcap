@@ -74,7 +74,7 @@ static int write_pcap(FILE * file, void * src, size_t len) {
         errno, strerror(errno));
     return -1;
   }
-  return 0;
+  return retval;
 }
 
 /*
