@@ -214,6 +214,7 @@ int write_core(const struct core_write_config * config) {
     retval = -1;
     goto cleanup;
   }
+  file_size = written;
 
   //Log
   RTE_LOG(INFO, DPDKCAP, "Core %d is writing using file template: %s.\n",
@@ -265,9 +266,6 @@ int write_core(const struct core_write_config * config) {
 
       //Open new file
       if(file_changed) {
-        //Update data
-        file_size=0;
-
         //Change file name
         format_from_template(file_name, config->output_file_template,
             rte_lcore_id(), file_count, &file_start);
@@ -295,6 +293,8 @@ int write_core(const struct core_write_config * config) {
           retval = -1;
           goto cleanup;
         }
+        //Reset file size
+        file_size = written;
       }
 
       //Write block header
@@ -308,6 +308,7 @@ int write_core(const struct core_write_config * config) {
         retval = -1;
         goto cleanup;
       }
+      file_size += written;
 
       //Write content
       written = file_write_func(write_buffer, eth, sizeof(char) * packet_length);
@@ -315,7 +316,6 @@ int write_core(const struct core_write_config * config) {
         retval = -1;
         goto cleanup;
       }
-
       file_size += written;
 
       //Update stats

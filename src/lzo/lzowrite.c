@@ -22,29 +22,47 @@ static int lzowrite_wbuf(struct lzowrite_buffer* lzowrite_buffer) {
   struct __attribute__((__packed__)) {
     uint32_t len;
     uint32_t out_length;
-    unsigned char out_buffer[LZOWRITE_OUT_BUFFER_SIZE];
-  } block;
+  } block_header;
+  unsigned char out_buffer[LZOWRITE_OUT_BUFFER_SIZE];
   uint32_t out_length;
   int to_be_written;
-  int retval = 0;
+  int retval;
+
+  if(lzowrite_buffer->length == 0) return 0;
 
   lzo1x_1_compress(
       lzowrite_buffer->buffer, lzowrite_buffer->length,
-      block.out_buffer, (lzo_uintp)&(out_length),
+      out_buffer, (lzo_uintp)&(out_length),
       lzowrite_buffer->workmemory);
 
-  //Write block header
-  block.len = __bswap_32(lzowrite_buffer->length);
-  block.out_length = __bswap_32(out_length);
+  //Write block_header header
+  block_header.len = __bswap_32(lzowrite_buffer->length);
+  if(lzowrite_buffer->length <= out_length) {
+    block_header.out_length = __bswap_32(lzowrite_buffer->length);
+  } else {
+    block_header.out_length = __bswap_32(out_length);
+  }
+  retval = fwrite(&block_header, sizeof(block_header), 1, lzowrite_buffer->output);
+  //Check if no write error occured
+  if (unlikely(retval != 1)) {
+    RTE_LOG(ERR, LZO, "Could not write lzo block header in file: %d (%s)\n",
+        errno, strerror(errno));
+    retval=-1;
+  }
 
-  //Write content
-  to_be_written = 2 * sizeof(uint32_t) + out_length;
-  retval = fwrite(&block, sizeof(unsigned char),
-            to_be_written, lzowrite_buffer->output);
-
+  //Write data
+  if(lzowrite_buffer->length <= out_length) {
+    to_be_written = lzowrite_buffer->length;
+    retval = fwrite(lzowrite_buffer->buffer, sizeof(unsigned char),
+                    to_be_written, lzowrite_buffer->output);
+  } else {
+    to_be_written = out_length;
+    retval = fwrite(out_buffer, sizeof(unsigned char),
+                    to_be_written, lzowrite_buffer->output);
+  }
   //Check if no write error occured
   if (unlikely(retval != to_be_written)) {
-    RTE_LOG(ERR, LZO, "Could not write lzo block in file: %d (%s)\n",
+    RTE_LOG(ERR, LZO, "Could not write lzo block data in file: %d (%s)\n",
         errno, strerror(errno));
     retval=-1;
   }
@@ -52,7 +70,7 @@ static int lzowrite_wbuf(struct lzowrite_buffer* lzowrite_buffer) {
   //Reset buffer
   lzowrite_buffer->length = 0;
 
-  return retval;
+  return sizeof(block_header) + to_be_written ;
 }
 
 struct lzowrite_buffer * lzowrite_init(FILE* file) {
