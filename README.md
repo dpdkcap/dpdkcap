@@ -119,6 +119,9 @@ is formatted according to the following tokens:
 - `-S, --statistics` prints a set of statistics while the capture is
   running.
 - `--logs` output logs into the specified file instead of stderr.
+- `--no-compression` disables the LZO compression. This is not advised, as it
+  greatly increase the disk I/O. It can however be used for capturing low speed
+  traffic.
 
 ## 3. Software License Agreements
 
