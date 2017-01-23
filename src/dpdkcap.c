@@ -25,7 +25,7 @@
 #define RTE_LOGTYPE_DPDKCAP RTE_LOGTYPE_USER1
 
 /* ARGP */
-const char *argp_program_version = "dpdkcap 1.0";
+const char *argp_program_version = "dpdkcap 1.1";
 const char *argp_program_bug_address = "w.b.devries@utwente.nl";
 static char doc[] = "A DPDK-based packet capture tool";
 static char args_doc[] = "";
