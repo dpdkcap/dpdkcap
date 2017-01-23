@@ -3,6 +3,7 @@
 #include <signal.h>
 #include <ncurses.h>
 #include <unistd.h>
+#include <stdint.h>
 
 #include <rte_ethdev.h>
 #include <rte_timer.h>
@@ -27,12 +28,12 @@ static void wglobal_stats(WINDOW * window, struct stats_data * data) {
 }
 
 static void wcapture_stats(WINDOW * window, struct stats_data * data) {
-  static unsigned long * last_per_port_packets = NULL;
+  static uint64_t * last_per_port_packets = NULL;
   unsigned int i,j;
   static struct rte_eth_stats port_statistics;
 
   if (!last_per_port_packets) last_per_port_packets =
-    malloc(sizeof(unsigned long) * data->cores_capture_stats_list_size);
+    malloc(sizeof(uint64_t) * data->cores_capture_stats_list_size);
 
   for (i=0; i<data->port_list_size; i++) {
     rte_eth_stats_get(data->port_list[i], &port_statistics);
@@ -81,16 +82,16 @@ static void wcapture_stats(WINDOW * window, struct stats_data * data) {
 }
 
 static void wwrite_stats(WINDOW * window, struct stats_data * data) {
-  static long last_total_packets = 0,
+  static uint64_t last_total_packets = 0,
               last_total_bytes = 0,
               last_total_compressedbytes = 0;
 
-  long total_packets = 0,
-       total_bytes = 0,
-       total_compressedbytes = 0;
-  long instant_packets,
-       instant_bytes,
-       instant_compressedbytes;
+  uint64_t total_packets = 0,
+           total_bytes = 0,
+           total_compressedbytes = 0;
+  uint64_t instant_packets,
+           instant_bytes,
+           instant_compressedbytes;
   unsigned int i;
 
   // Calculate aggregated stats from writing cores

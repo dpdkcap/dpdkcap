@@ -2,6 +2,7 @@
 #define DPDKCAP_CORE_WRITE_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #define DPDKCAP_OUTPUT_FILENAME_LENGTH 100
 #define DPDKCAP_WRITE_BURST_SIZE 256
@@ -15,19 +16,19 @@ struct core_write_config {
   int no_compression;
   unsigned int snaplen;
   unsigned long rotate_seconds;
-  unsigned long file_size_limit;
+  uint64_t file_size_limit;
 };
 
 /* Statistics structure */
 struct core_write_stats {
   int core_id;
   char output_file[DPDKCAP_OUTPUT_FILENAME_LENGTH];
-  unsigned long current_file_packets;
-  unsigned long current_file_bytes;
-  unsigned long current_file_compressed_bytes;
-  unsigned long packets;
-  unsigned long bytes;
-  unsigned long compressed_bytes;
+  uint64_t current_file_packets;
+  uint64_t current_file_bytes;
+  uint64_t current_file_compressed_bytes;
+  uint64_t packets;
+  uint64_t bytes;
+  uint64_t compressed_bytes;
 };
 
 /* Launches a write task */

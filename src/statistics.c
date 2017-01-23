@@ -24,9 +24,9 @@ static int print_stats(
   static unsigned int nb_stat_update = 0;
   static struct rte_eth_stats port_statistics;
 
-  long total_packets = 0;
-  long total_bytes = 0;
-  long total_compressedbytes = 0;
+  uint64_t total_packets = 0;
+  uint64_t total_bytes = 0;
+  uint64_t total_compressedbytes = 0;
   unsigned int i, j;
 
   nb_stat_update ++;

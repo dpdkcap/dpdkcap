@@ -68,8 +68,8 @@ static FILE * open_pcap(char * output_file) {
 static int write_pcap(FILE * file, void * src, size_t len) {
   size_t retval;
   // Write file
-  retval = fwrite(src, sizeof(char), len, file);
-  if (unlikely(retval != len)) {
+  retval = fwrite(src, len, 1, file);
+  if (unlikely(retval != 1)) {
     RTE_LOG(ERR, DPDKCAP, "Could not write into file: %d (%s)\n",
         errno, strerror(errno));
     return -1;
@@ -151,23 +151,22 @@ static int close_lzo_pcap(struct lzowrite_buffer * buffer) {
  */
 int write_core(const struct core_write_config * config) {
   void * write_buffer;
-  unsigned char* eth;
   unsigned int packet_length, wire_packet_length;
   int to_write;
-  void* dequeued[DPDKCAP_WRITE_BURST_SIZE];
-  struct rte_mbuf* bufptr;
+  struct rte_mbuf * dequeued[DPDKCAP_WRITE_BURST_SIZE];
+  struct rte_mbuf * bufptr;
   struct pcap_packet_header header;
   struct timeval tv;
   struct pcap_header pcp;
   int retval = 0;
   int written;
   void * (*file_open_func)(char*);
-  int (*file_write_func)(void*, void*, int);
+  int (*file_write_func)(void*, void *, int);
   int (*file_close_func)(void*);
 
   char file_name[DPDKCAP_OUTPUT_FILENAME_LENGTH];
   unsigned int file_count = 0;
-  unsigned int file_size = 0;
+  uint64_t file_size = 0;
   struct timeval file_start;
 
   if(config->no_compression) {
@@ -209,7 +208,7 @@ int write_core(const struct core_write_config * config) {
   }
 
   //Write pcap header
-  written = file_write_func(write_buffer, &pcp, sizeof(struct pcap_header));
+  written = file_write_func(write_buffer, (unsigned char *) &pcp, sizeof(struct pcap_header));
   if(unlikely(written<0)) {
     retval = -1;
     goto cleanup;
@@ -226,12 +225,12 @@ int write_core(const struct core_write_config * config) {
     }
 
     //Get packets from the ring
-    to_write = rte_ring_dequeue_bulk(config->ring, dequeued,
+    to_write = rte_ring_dequeue_bulk(config->ring, (void*) dequeued,
         DPDKCAP_WRITE_BURST_SIZE);
     if (likely(to_write==0)) {
       to_write = DPDKCAP_WRITE_BURST_SIZE;
     } else {
-      to_write = rte_ring_dequeue_burst(config->ring, dequeued,
+      to_write = rte_ring_dequeue_burst(config->ring, (void*)dequeued,
           DPDKCAP_WRITE_BURST_SIZE);
     }
 
@@ -243,10 +242,10 @@ int write_core(const struct core_write_config * config) {
     for (i = 0; i < to_write; i++) {
       //Cast to packet
       bufptr = dequeued[i];
-      eth = rte_pktmbuf_mtod(bufptr, unsigned char*);
       wire_packet_length = rte_pktmbuf_pkt_len(bufptr);
+
       //Truncate packet if needed
-      packet_length = MIN(config->snaplen,wire_packet_length);
+      packet_length = MIN(config->snaplen, wire_packet_length);
 
       //Get time
       gettimeofday(&tv, NULL);
@@ -311,12 +310,20 @@ int write_core(const struct core_write_config * config) {
       file_size += written;
 
       //Write content
-      written = file_write_func(write_buffer, eth, sizeof(char) * packet_length);
-      if (unlikely(written<0)) {
-        retval = -1;
-        goto cleanup;
+      while (bufptr != NULL) {
+        written = file_write_func(write_buffer,
+            rte_pktmbuf_mtod(bufptr, void*), rte_pktmbuf_data_len(bufptr));
+        if (unlikely(written<0)) {
+          retval = -1;
+          goto cleanup;
+        }
+        bufptr = bufptr->next;
+        file_size += written;
       }
-      file_size += written;
+
+
+      //Free buffer
+      rte_pktmbuf_free(dequeued[i]);
 
       //Update stats
       config->stats->bytes += packet_length;
@@ -325,8 +332,6 @@ int write_core(const struct core_write_config * config) {
       config->stats->current_file_bytes += packet_length;
       config->stats->current_file_compressed_bytes = file_size;
 
-      //Free buffer
-      rte_pktmbuf_free(bufptr);
     }
   }
 
@@ -336,5 +341,5 @@ cleanup:
 
   RTE_LOG(INFO, DPDKCAP, "Closed writing core %d\n", rte_lcore_id());
 
-  return retval;
-}
+    return retval;
+  }

@@ -67,7 +67,7 @@ struct arguments {
   int no_compression;
   unsigned int snaplen;
   unsigned int rotate_seconds;
-  unsigned int file_size_limit;
+  uint64_t file_size_limit;
   char * log_file;
 };
 
@@ -111,7 +111,7 @@ static error_t parse_opt(int key, char* arg, struct argp_state *state) {
       arguments->rotate_seconds = atoi(arg);
       break;
     case 'C':
-      arguments->file_size_limit = atoi(arg);
+      arguments->file_size_limit = atoll(arg);
       break;
     case 700:
       arguments->log_file = arg;

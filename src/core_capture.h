@@ -17,8 +17,8 @@ struct core_capture_config {
 /* Statistics structure */
 struct core_capture_stats {
   int core_id;
-  unsigned long packets; //Packets successfully enqueued
-  unsigned long missed_packets; //Packets core could not enqueue
+  uint64_t packets; //Packets successfully enqueued
+  uint64_t missed_packets; //Packets core could not enqueue
 };
 
 /* Launches a capture task */

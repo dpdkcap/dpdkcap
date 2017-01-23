@@ -146,7 +146,7 @@ cleanup:
   return NULL;
 }
 
-int lzowrite(struct lzowrite_buffer* lzowrite_buffer, void* src, size_t len) {
+int lzowrite(struct lzowrite_buffer* lzowrite_buffer, void * src, size_t len) {
   int retval = 0;
 
   if (len > LZOWRITE_BUFFER_SIZE) {
@@ -155,14 +155,14 @@ int lzowrite(struct lzowrite_buffer* lzowrite_buffer, void* src, size_t len) {
     goto cleanup;
   }
 
-  if (lzowrite_buffer->length + len > LZOWRITE_BUFFER_SIZE) {
+  if (lzowrite_buffer->length + len >= LZOWRITE_BUFFER_SIZE) {
     retval=lzowrite_wbuf(lzowrite_buffer);
     if (unlikely(retval < 0)) {
       retval= -1;
     }
   }
 
-  memcpy(&lzowrite_buffer->buffer[lzowrite_buffer->length], src, len);
+  memcpy(&(lzowrite_buffer->buffer[lzowrite_buffer->length]), src, len);
   lzowrite_buffer->length += len;
 cleanup:
   return retval;

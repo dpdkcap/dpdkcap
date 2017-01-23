@@ -59,7 +59,8 @@ struct lzowrite_buffer * lzowrite_init(FILE *);
  * Returns the number of written bytes on success (might be 0),
  * -1 on failure.
  */
-int lzowrite(struct lzowrite_buffer* lzowrite_buffer, void* src, size_t len);
+int lzowrite(struct lzowrite_buffer* lzowrite_buffer, void * src,
+    size_t len);
 
 /*
  * Flushes the buffer by writting the last bytes into the output stream, then

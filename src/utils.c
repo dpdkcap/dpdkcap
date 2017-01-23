@@ -1,5 +1,6 @@
 #include "utils.h"
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 
 const char * bytes_unit[] = { "B", "KB", "MB", "GB", "TB" };
@@ -7,7 +8,7 @@ const char * nb_unit[] = {"k", "M", "G"};
 char result[50];
 
 
-char * bytes_format(unsigned long bytes) {
+char * bytes_format(uint64_t bytes) {
     int i;
     double converted_bytes = bytes;
     for (i = 0; i < 5 && bytes >= 1024; i++, bytes /= 1024) {
@@ -18,7 +19,7 @@ char * bytes_format(unsigned long bytes) {
     return result;
 }
 
-char * ul_format(unsigned long nb) {
+char * ul_format(uint64_t nb) {
     int i;
     double converted_nb = nb;
     for (i = 0; i < 4 && nb >= 1000; i++, nb /= 1000) {
