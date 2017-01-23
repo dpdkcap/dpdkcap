@@ -22,7 +22,7 @@ guide](http://dpdk.org/doc/guides/linux_gsg/build_dpdk.html).
 DPDKCap requires the following dependencies to be built:
 - libncurses-dev
 
-### 1.2 Build and Install DPDKCap
+### 1.3 Build and Install DPDKCap
 
 To build DPDKCap, you first need to set `RTE_SDK` and `RTE_TARGET`.
 ```
