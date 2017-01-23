@@ -14,9 +14,6 @@
 #include "core_capture.h"
 #include "statistics.h"
 
-#define RX_RING_SIZE 1024 //256
-#define TX_RING_SIZE 512 //512
-
 #define NUM_MBUFS 2048
 #define MBUF_CACHE_SIZE 256 //0
 #define WRITE_RING_SIZE NUM_MBUFS
@@ -154,8 +151,12 @@ static int port_init(
     struct rte_mempool *mbuf_pool) {
 
   struct rte_eth_conf port_conf = port_conf_default;
+  struct rte_eth_dev_info dev_info;
   int retval;
   uint16_t q;
+
+  /* Get the device info */
+  rte_eth_dev_info_get(port, &dev_info);
 
   /* Configure multiqueue (Activate Receive Side Scaling on UDP/TCP fields) */
   if (rx_rings > 1) {
@@ -180,7 +181,7 @@ static int port_init(
 
   /* Allocate and set up RX queues. */
   for (q = 0; q < rx_rings; q++) {
-    retval = rte_eth_rx_queue_setup(port, q, RX_RING_SIZE,
+    retval = rte_eth_rx_queue_setup(port, q, dev_info.rx_desc_lim.nb_max,
         rte_eth_dev_socket_id(port), NULL, mbuf_pool);
     if (retval < 0) {
       RTE_LOG(ERR, DPDKCAP, "rte_eth_rx_queue_setup(...) returned with error "\
@@ -198,7 +199,7 @@ static int port_init(
   }
 
   /* Allocate one TX queue (unused) */
-  retval = rte_eth_tx_queue_setup(port, 0, TX_RING_SIZE,
+  retval = rte_eth_tx_queue_setup(port, 0, dev_info.tx_desc_lim.nb_min,
       rte_eth_dev_socket_id(port),NULL);
   if (retval < 0) {
       RTE_LOG(ERR, DPDKCAP, "rte_eth_tx_queue_setup(...) "\
