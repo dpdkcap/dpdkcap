@@ -9,6 +9,7 @@
 #include <rte_timer.h>
 #include <rte_ring.h>
 #include <rte_log.h>
+#include <rte_cycles.h>
 
 #include "utils.h"
 
@@ -254,8 +255,8 @@ void start_stats_display(struct stats_data * data) {
   rte_timer_subsystem_init();
   //Timer launch
   rte_timer_init (&(stats_timer));
-  rte_timer_reset(&(stats_timer), 2000000ULL * STATS_PERIOD_MS, PERIODICAL,
-      rte_lcore_id(), (void*) printscreen, data);
+  rte_timer_reset(&(stats_timer), rte_get_timer_hz() * STATS_PERIOD_MS / 1000,
+      PERIODICAL, rte_lcore_id(), (void*) printscreen, data);
 
   //Wait for ctrl+c
   for (;;) {
