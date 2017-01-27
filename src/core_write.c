@@ -151,8 +151,10 @@ static int close_lzo_pcap(struct lzowrite_buffer * buffer) {
  */
 int write_core(const struct core_write_config * config) {
   void * write_buffer;
-  unsigned int packet_length, wire_packet_length;
+  unsigned int packet_length, wire_packet_length, compressed_length;
+  unsigned int remaining_bytes;
   int to_write;
+  int bytes_to_write;
   struct rte_mbuf * dequeued[DPDKCAP_WRITE_BURST_SIZE];
   struct rte_mbuf * bufptr;
   struct pcap_packet_header header;
@@ -310,24 +312,29 @@ int write_core(const struct core_write_config * config) {
       file_size += written;
 
       //Write content
-      while (bufptr != NULL) {
+      remaining_bytes = packet_length;
+      compressed_length = 0;
+      while (bufptr != NULL && remaining_bytes > 0) {
+        bytes_to_write = MIN(rte_pktmbuf_data_len(bufptr), remaining_bytes);
         written = file_write_func(write_buffer,
-            rte_pktmbuf_mtod(bufptr, void*), rte_pktmbuf_data_len(bufptr));
+            rte_pktmbuf_mtod(bufptr, void*),
+            bytes_to_write);
         if (unlikely(written<0)) {
           retval = -1;
           goto cleanup;
         }
         bufptr = bufptr->next;
+        remaining_bytes -= bytes_to_write;
+        compressed_length += written;
         file_size += written;
       }
-
 
       //Free buffer
       rte_pktmbuf_free(dequeued[i]);
 
       //Update stats
       config->stats->bytes += packet_length;
-      config->stats->compressed_bytes += written;
+      config->stats->compressed_bytes += compressed_length;
       config->stats->current_file_packets ++;
       config->stats->current_file_bytes += packet_length;
       config->stats->current_file_compressed_bytes = file_size;
