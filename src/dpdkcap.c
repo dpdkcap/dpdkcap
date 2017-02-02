@@ -8,6 +8,7 @@
 #include <rte_log.h>
 #include <rte_memcpy.h>
 #include <rte_ethdev.h>
+#include <rte_errno.h>
 
 #include "pcap.h"
 #include "core_write.h"
@@ -174,8 +175,8 @@ static int port_init(
   /* Configure the Ethernet device. */
   retval = rte_eth_dev_configure(port, rx_rings, 1, &port_conf);
   if (retval != 0) {
-    RTE_LOG(ERR, DPDKCAP, "rte_eth_dev_configure(...) returned with error "\
-        "code %d\n", retval);
+    RTE_LOG(ERR, DPDKCAP, "rte_eth_dev_configure(...): %s\n",
+        rte_strerror(-retval));
     return retval;
   }
 
@@ -184,15 +185,15 @@ static int port_init(
     retval = rte_eth_rx_queue_setup(port, q, dev_info.rx_desc_lim.nb_max,
         rte_eth_dev_socket_id(port), NULL, mbuf_pool);
     if (retval < 0) {
-      RTE_LOG(ERR, DPDKCAP, "rte_eth_rx_queue_setup(...) returned with error "\
-          "code %d\n", retval);
+      RTE_LOG(ERR, DPDKCAP, "rte_eth_rx_queue_setup(...): %s\n",
+          rte_strerror(-retval));
       return retval;
     }
     //Stats bindings
     retval = rte_eth_dev_set_rx_queue_stats_mapping (port, q, q);
     if (retval != 0) {
-      RTE_LOG(WARNING, DPDKCAP, "rte_eth_dev_set_rx_queue_stats_mapping(...) "\
-          "returned with error code %d\n", retval);
+      RTE_LOG(WARNING, DPDKCAP, "rte_eth_dev_set_rx_queue_stats_mapping(...):"\
+          "%s\n", rte_strerror(-retval));
       RTE_LOG(WARNING, DPDKCAP, "The queues statistics mapping failed. The "\
          "displayed queue statistics are thus unreliable.\n");
     }
@@ -202,8 +203,8 @@ static int port_init(
   retval = rte_eth_tx_queue_setup(port, 0, dev_info.tx_desc_lim.nb_min,
       rte_eth_dev_socket_id(port),NULL);
   if (retval < 0) {
-      RTE_LOG(ERR, DPDKCAP, "rte_eth_tx_queue_setup(...) "\
-          "returned with error code %d\n", retval);
+      RTE_LOG(ERR, DPDKCAP, "rte_eth_tx_queue_setup(...): %s\n",
+          rte_strerror(-retval));
     return retval;
   }
   /* Enable RX in promiscuous mode for the Ethernet device. */
