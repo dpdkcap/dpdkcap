@@ -156,20 +156,28 @@ static int port_init(
   int retval;
   uint16_t q;
 
+  /* Check if the port id is valid */
+  if(rte_eth_dev_is_valid_port(port)==0) {
+    RTE_LOG(ERR, DPDKCAP, "Port identifier %d out of range (0 to %d) or not"\
+       " attached.\n", port, rte_eth_dev_count()-1);
+    return -1;
+  }
+
   /* Get the device info */
   rte_eth_dev_info_get(port, &dev_info);
+
+  /* Check if the requested number of queue is valid */
+  if(rx_rings > dev_info.max_rx_queues) {
+    RTE_LOG(ERR, DPDKCAP, "Port %d can only handle up to %d queues (%d "\
+        "requested)\n", port, dev_info.max_rx_queues, rx_rings);
+    return -1;
+  }
 
   /* Configure multiqueue (Activate Receive Side Scaling on UDP/TCP fields) */
   if (rx_rings > 1) {
     port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS;
     port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
     port_conf.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_PROTO_MASK;
-  }
-
-  if (port >= rte_eth_dev_count()) {
-    RTE_LOG(ERR, DPDKCAP, "Port identifier %d over the limit (max:%d)\n", port,
-       rte_eth_dev_count()-1);
-    return -1;
   }
 
   /* Configure the Ethernet device. */
@@ -207,6 +215,7 @@ static int port_init(
           rte_strerror(-retval));
     return retval;
   }
+
   /* Enable RX in promiscuous mode for the Ethernet device. */
   rte_eth_promiscuous_enable(port);
 
