@@ -154,6 +154,7 @@ static int port_init(
   struct rte_eth_conf port_conf = port_conf_default;
   struct rte_eth_dev_info dev_info;
   int retval;
+  uint32_t nb_desc;
   uint16_t q;
 
   /* Check if the port id is valid */
@@ -188,9 +189,15 @@ static int port_init(
     return retval;
   }
 
+  /* Compute the number of descriptors needed */
+  nb_desc = dev_info.rx_desc_lim.nb_max / rx_rings;
+  if(!rte_is_power_of_2(nb_desc)) {
+    nb_desc = rte_align32pow2(nb_desc) / 2;
+  }
+
   /* Allocate and set up RX queues. */
   for (q = 0; q < rx_rings; q++) {
-    retval = rte_eth_rx_queue_setup(port, q, dev_info.rx_desc_lim.nb_max,
+    retval = rte_eth_rx_queue_setup(port, q, nb_desc,
         rte_eth_dev_socket_id(port), NULL, mbuf_pool);
     if (retval < 0) {
       RTE_LOG(ERR, DPDKCAP, "rte_eth_rx_queue_setup(...): %s\n",
@@ -201,7 +208,7 @@ static int port_init(
     retval = rte_eth_dev_set_rx_queue_stats_mapping (port, q, q);
     if (retval != 0) {
       RTE_LOG(WARNING, DPDKCAP, "rte_eth_dev_set_rx_queue_stats_mapping(...):"\
-          "%s\n", rte_strerror(-retval));
+          " %s\n", rte_strerror(-retval));
       RTE_LOG(WARNING, DPDKCAP, "The queues statistics mapping failed. The "\
          "displayed queue statistics are thus unreliable.\n");
     }
