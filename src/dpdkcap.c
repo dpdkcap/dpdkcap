@@ -198,6 +198,15 @@ static int port_init(
     return retval;
   }
 
+  /* Allocate one TX queue (unused) */
+  retval = rte_eth_tx_queue_setup(port, 0, dev_info.tx_desc_lim.nb_min,
+      rte_eth_dev_socket_id(port),NULL);
+  if (retval < 0) {
+      RTE_LOG(ERR, DPDKCAP, "rte_eth_tx_queue_setup(...): %s\n",
+          rte_strerror(-retval));
+    return retval;
+  }
+
   /* Compute the number of descriptors needed */
   nb_desc = dev_info.rx_desc_lim.nb_min;
 
@@ -218,15 +227,6 @@ static int port_init(
       RTE_LOG(WARNING, DPDKCAP, "The queues statistics mapping failed. The "\
          "displayed queue statistics are thus unreliable.\n");
     }
-  }
-
-  /* Allocate one TX queue (unused) */
-  retval = rte_eth_tx_queue_setup(port, 0, dev_info.tx_desc_lim.nb_min,
-      rte_eth_dev_socket_id(port),NULL);
-  if (retval < 0) {
-      RTE_LOG(ERR, DPDKCAP, "rte_eth_tx_queue_setup(...): %s\n",
-          rte_strerror(-retval));
-    return retval;
   }
 
   /* Enable RX in promiscuous mode for the Ethernet device. */
