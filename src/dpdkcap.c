@@ -15,9 +15,11 @@
 #include "core_capture.h"
 #include "statistics.h"
 
-#define NUM_MBUFS 8191
+#define STR1(x)  #x
+#define STR(x)  STR1(x)
+
+#define NUM_MBUFS_DEFAULT 8191
 #define MBUF_CACHE_SIZE 256
-#define WRITE_RING_SIZE NUM_MBUFS
 
 #define MAX_LCORES 1000
 
@@ -36,6 +38,9 @@ static struct argp_option options[] = {
       "name (automatically added if not used). (default: output_\%COREID)"
       , 0 },
   { "statistics", 'S', 0, 0, "Print statistics every few seconds.", 0 },
+  { "nb-mbuf", 'm', "NB_MBUF", 0, "Total number of memory buffer used to "\
+    "store the packets. Optimal values, in terms of memory usage, are powers "\
+      "of 2 minus 1 (2^q-1) (default: "STR(NUM_MBUFS_DEFAULT)")", 0 },
   { "per_port_c_cores", 'c', "NB_CORES_PER_PORT", 0, "Number of cores per " \
     "port used for capture (default: 1)", 0 },
   { "num_w_cores", 'w', "NB_CORES", 0, "Total number of cores used for "\
@@ -60,6 +65,7 @@ struct arguments {
   char output_file_template[DPDKCAP_OUTPUT_FILENAME_LENGTH];
   uint64_t portmask;
   int statistics;
+  unsigned int nb_mbufs;
   unsigned int per_port_c_cores;
   unsigned int num_w_cores;
   int no_compression;
@@ -95,6 +101,9 @@ static error_t parse_opt(int key, char* arg, struct argp_state *state) {
       break;
     case 'S':
       arguments->statistics = 1;
+      break;
+    case 'm':
+      arguments->nb_mbufs = atoi(arg);
       break;
     case 'c':
       arguments->per_port_c_cores = atoi(arg);
@@ -285,6 +294,7 @@ int main(int argc, char *argv[]) {
   /* Parse arguments */
   arguments = (struct arguments) {
     .statistics = 0,
+      .nb_mbufs = NUM_MBUFS_DEFAULT,
       .per_port_c_cores = 1,
       .num_w_cores = 1,
       .no_compression = 0,
@@ -362,7 +372,7 @@ int main(int argc, char *argv[]) {
 
 
   /* Creates a new mempool in memory to hold the mbufs. */
-  mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", NUM_MBUFS * nb_ports,
+  mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", arguments.nb_mbufs,
       MBUF_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
 
   if (mbuf_pool == NULL)
@@ -371,7 +381,7 @@ int main(int argc, char *argv[]) {
 
   //Initialize buffer for writing to disk
   write_ring = rte_ring_create("Ring for writing",
-      rte_align32pow2 (WRITE_RING_SIZE), rte_socket_id(), 0);
+      rte_align32pow2 (arguments.nb_mbufs), rte_socket_id(), 0);
 
   /* Core index */
   core_index = rte_get_next_lcore(-1, 1, 0);
