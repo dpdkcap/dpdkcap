@@ -18,7 +18,7 @@
 #define STR1(x)  #x
 #define STR(x)  STR1(x)
 
-#define NUM_MBUFS_DEFAULT 8191
+#define NUM_MBUFS_DEFAULT 65535
 #define MBUF_CACHE_SIZE 256
 
 #define MAX_LCORES 1000
