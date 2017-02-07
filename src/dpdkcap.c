@@ -15,8 +15,8 @@
 #include "core_capture.h"
 #include "statistics.h"
 
-#define NUM_MBUFS 2048
-#define MBUF_CACHE_SIZE 256 //0
+#define NUM_MBUFS 8191
+#define MBUF_CACHE_SIZE 256
 #define WRITE_RING_SIZE NUM_MBUFS
 
 #define MAX_LCORES 1000
@@ -190,10 +190,7 @@ static int port_init(
   }
 
   /* Compute the number of descriptors needed */
-  nb_desc = dev_info.rx_desc_lim.nb_max / rx_rings;
-  if(!rte_is_power_of_2(nb_desc)) {
-    nb_desc = rte_align32pow2(nb_desc) / 2;
-  }
+  nb_desc = dev_info.rx_desc_lim.nb_min;
 
   /* Allocate and set up RX queues. */
   for (q = 0; q < rx_rings; q++) {
