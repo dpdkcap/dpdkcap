@@ -23,7 +23,16 @@
 
 #define MAX_LCORES 1000
 
+
+#define DPDKCAP_OUTPUT_TEMPLATE_TOKEN_FILECOUNT "\%FCOUNT"
+#define DPDKCAP_OUTPUT_TEMPLATE_TOKEN_CORE_ID   "\%COREID"
+#define DPDKCAP_OUTPUT_TEMPLATE_DEFAULT "output_" \
+  DPDKCAP_OUTPUT_TEMPLATE_TOKEN_CORE_ID
+
 #define DPDKCAP_OUTPUT_TEMPLATE_LENGTH 2 * DPDKCAP_OUTPUT_FILENAME_LENGTH
+
+
+
 
 #define RTE_LOGTYPE_DPDKCAP RTE_LOGTYPE_USER1
 
@@ -34,8 +43,9 @@ static char doc[] = "A DPDK-based packet capture tool";
 static char args_doc[] = "";
 static struct argp_option options[] = {
   { "output", 'o', "FILE", 0, "Output FILE template (don't add the "\
-    "extension). Use \"\%COREID\" for inserting the lcore id into the file " \
-      "name (automatically added if not used). (default: output_\%COREID)"
+    "extension). Use \""DPDKCAP_OUTPUT_TEMPLATE_TOKEN_CORE_ID"\" for "\
+      "inserting the lcore id into the file name (automatically added if not "\
+      "used). (default: "DPDKCAP_OUTPUT_TEMPLATE_DEFAULT")"
       , 0 },
   { "statistics", 'S', 0, 0, "Print statistics every few seconds.", 0 },
   { "nb-mbuf", 'm', "NB_MBUF", 0, "Total number of memory buffer used to "\
@@ -50,8 +60,8 @@ static struct argp_option options[] = {
       "each file accordingly.", 0},
   { "limit_file_size", 'C', "SIZE", 0, "Before writing a packet, check "\
     "whether the target file excess SIZE bytes. If so, creates a new file. " \
-      "Use \"\%FCOUNT\" within the output file template to index each new "\
-      "file.", 0},
+      "Use \""DPDKCAP_OUTPUT_TEMPLATE_TOKEN_FILECOUNT"\" within the output "\
+      "file template to index each new file.", 0},
   { "portmask", 'p', "PORTMASK", 0, "Ethernet ports mask (default: 0x1).", 0 },
   { "snaplen", 's', "LENGTH", 0, "Snap the capture to snaplen bytes "\
     "(default: 65535).", 0 },
@@ -304,7 +314,7 @@ int main(int argc, char *argv[]) {
       .file_size_limit = 0,
       .log_file=NULL,
   };
-  strncpy(arguments.output_file_template,"output_\%COREID",
+  strncpy(arguments.output_file_template, DPDKCAP_OUTPUT_TEMPLATE_DEFAULT,
       DPDKCAP_OUTPUT_FILENAME_LENGTH);
   argp_parse(&argp, argc, argv, 0, 0, &arguments);
 
@@ -327,11 +337,15 @@ int main(int argc, char *argv[]) {
   }
 
   /* Add suffixes to output if needed */
-  if (!strstr(arguments.output_file_template,"\%COREID"))
-    strcat(arguments.output_file_template,"_\%COREID");
+  if (!strstr(arguments.output_file_template,
+        DPDKCAP_OUTPUT_TEMPLATE_TOKEN_CORE_ID))
+    strcat(arguments.output_file_template,
+        "_"DPDKCAP_OUTPUT_TEMPLATE_TOKEN_CORE_ID);
   if (arguments.file_size_limit &&
-      !strstr(arguments.output_file_template,"\%FCOUNT"))
-    strcat(arguments.output_file_template,"_\%FCOUNT");
+      !strstr(arguments.output_file_template,
+        DPDKCAP_OUTPUT_TEMPLATE_TOKEN_FILECOUNT))
+    strcat(arguments.output_file_template,
+        "_"DPDKCAP_OUTPUT_TEMPLATE_TOKEN_FILECOUNT);
 
   strcat(arguments.output_file_template, ".pcap");
 
