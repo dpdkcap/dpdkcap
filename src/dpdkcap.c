@@ -201,19 +201,10 @@ static int port_init(
   }
 
   /* Configure the Ethernet device. */
-  retval = rte_eth_dev_configure(port, rx_rings, 1, &port_conf);
+  retval = rte_eth_dev_configure(port, rx_rings, 0, &port_conf);
   if (retval != 0) {
     RTE_LOG(ERR, DPDKCAP, "rte_eth_dev_configure(...): %s\n",
         rte_strerror(-retval));
-    return retval;
-  }
-
-  /* Allocate one TX queue (unused) */
-  retval = rte_eth_tx_queue_setup(port, 0, dev_info.tx_desc_lim.nb_min,
-      rte_eth_dev_socket_id(port),NULL);
-  if (retval < 0) {
-      RTE_LOG(ERR, DPDKCAP, "rte_eth_tx_queue_setup(...): %s\n",
-          rte_strerror(-retval));
     return retval;
   }
 
