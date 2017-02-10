@@ -127,8 +127,25 @@ is formatted according to the following tokens:
 - `--no-compression` disables the LZO compression. This is not advised, as it
   greatly increase the disk I/O. It can however be used for capturing low speed
   traffic.
+- `-m, --num_mbufs` changes the number of memory buffers used by dpdkcap. Note
+  that the default value might not work in your situation (mbufs pool
+  allocation failure at startup or RX mbufs allocation failures while running).
+  Optimal values (in term of memory usage) are powers of 2 minus one
+  (n=2^q-1).
 
-## 3. Software License Agreements
+## 3. Troubleshooting
+
+Here is a list of common issues and how to solve them:
+- Mbufs pool allocation failure: try to reduce the number of memory buffers
+  used with the `-m, -num_mbufs` option.
+- Mbufs allocation failures (while running): try to raise the number of memory
+  buffers used with the `-m, -num_mbufs` option.
+- Problems with with RX queues configuration: the default number of RX
+  descriptors configured might be too high for your interface. Change the
+  `RX_DESC_DEFAULT` value in `dpdkcap.c`. (should be added as argument into a
+  next version)
+
+## 4. Software License Agreements
 
 DPDKCap is distributed under the BSD License, see LICENSE.txt.
 

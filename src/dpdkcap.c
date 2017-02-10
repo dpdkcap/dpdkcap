@@ -18,7 +18,9 @@
 #define STR1(x)  #x
 #define STR(x)  STR1(x)
 
-#define NUM_MBUFS_DEFAULT 65535
+#define RX_DESC_DEFAULT 512
+
+#define NUM_MBUFS_DEFAULT 8192
 #define MBUF_CACHE_SIZE 256
 
 #define MAX_LCORES 1000
@@ -48,7 +50,7 @@ static struct argp_option options[] = {
       "used). (default: "DPDKCAP_OUTPUT_TEMPLATE_DEFAULT")"
       , 0 },
   { "statistics", 'S', 0, 0, "Print statistics every few seconds.", 0 },
-  { "nb-mbuf", 'm', "NB_MBUF", 0, "Total number of memory buffer used to "\
+  { "num-mbuf", 'm', "NB_MBUF", 0, "Total number of memory buffer used to "\
     "store the packets. Optimal values, in terms of memory usage, are powers "\
       "of 2 minus 1 (2^q-1) (default: "STR(NUM_MBUFS_DEFAULT)")", 0 },
   { "per_port_c_cores", 'c', "NB_CORES_PER_PORT", 0, "Number of cores per " \
@@ -209,7 +211,7 @@ static int port_init(
   }
 
   /* Compute the number of descriptors needed */
-  nb_desc = dev_info.rx_desc_lim.nb_min;
+  nb_desc = RX_DESC_DEFAULT;
 
   /* Allocate and set up RX queues. */
   for (q = 0; q < rx_rings; q++) {
