@@ -76,8 +76,6 @@ static void wcapture_stats(WINDOW * window, struct stats_data * data) {
       last_per_port_packets[i*data->queue_per_port+j] =
          data->cores_stats_capture_list[i*data->queue_per_port+j].packets;
     }
-    wprintw(window, "    (%d unused queues hidden)\n",
-        RTE_ETHDEV_QUEUE_STAT_CNTRS - data->queue_per_port);
     wprintw(window, "\n");
   }
 }

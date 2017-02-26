@@ -222,13 +222,18 @@ static int port_init(
           rte_strerror(-retval));
       return retval;
     }
-    //Stats bindings
-    retval = rte_eth_dev_set_rx_queue_stats_mapping (port, q, q);
-    if (retval != 0) {
-      RTE_LOG(WARNING, DPDKCAP, "rte_eth_dev_set_rx_queue_stats_mapping(...):"\
-          " %s\n", rte_strerror(-retval));
-      RTE_LOG(WARNING, DPDKCAP, "The queues statistics mapping failed. The "\
-         "displayed queue statistics are thus unreliable.\n");
+  }
+
+  /* Stats bindings (if more than one queue) */
+  if(rx_rings > 1) {
+    for (q = 0; q < rx_rings; q++) {
+      retval = rte_eth_dev_set_rx_queue_stats_mapping (port, q, q);
+      if (retval != 0) {
+        RTE_LOG(WARNING, DPDKCAP, "rte_eth_dev_set_rx_queue_stats_mapping(...):"\
+            " %s\n", rte_strerror(-retval));
+        RTE_LOG(WARNING, DPDKCAP, "The queues statistics mapping failed. The "\
+           "displayed queue statistics are thus unreliable.\n");
+      }
     }
   }
 
