@@ -9,6 +9,7 @@
 #include <rte_memcpy.h>
 #include <rte_ethdev.h>
 #include <rte_errno.h>
+#include <rte_string_fns.h>
 
 #include "pcap.h"
 #include "core_write.h"
@@ -25,16 +26,12 @@
 
 #define MAX_LCORES 1000
 
-
 #define DPDKCAP_OUTPUT_TEMPLATE_TOKEN_FILECOUNT "\%FCOUNT"
 #define DPDKCAP_OUTPUT_TEMPLATE_TOKEN_CORE_ID   "\%COREID"
 #define DPDKCAP_OUTPUT_TEMPLATE_DEFAULT "output_" \
   DPDKCAP_OUTPUT_TEMPLATE_TOKEN_CORE_ID
 
 #define DPDKCAP_OUTPUT_TEMPLATE_LENGTH 2 * DPDKCAP_OUTPUT_FILENAME_LENGTH
-
-
-
 
 #define RTE_LOGTYPE_DPDKCAP RTE_LOGTYPE_USER1
 
@@ -57,6 +54,26 @@ static struct argp_option options[] = {
     "port used for capture (default: 1)", 0 },
   { "num_w_cores", 'w', "NB_CORES", 0, "Total number of cores used for "\
     "writing (default: 1).", 0 },
+  { "rx_desc", 'd', "RX_DESC_MATRIX", 0, "This option can be used to "\
+    "override the default number of RX descriptors configured for all queues "\
+      "of each port ("STR(RX_DESC_DEFAULT)"). RX_DESC_MATRIX can have "\
+      "multiple formats:\n"\
+      "- A single positive value, which will simply replace the default "\
+      " number of RX descriptors,\n"\
+      "- A list of key-values, assigning a configured number of RX "\
+      "descriptors to the given port(s). Format: \n"\
+      "  <matrix> := <key>.<nb_rx_desc> { \",\" <key>.<nb_rx_desc> \",\" "\
+      "...\n"\
+      "  <key>    := { <interval> | <port> }\n"\
+      "  <list>   := <lower_port> \"-\" <upper_port>\n"\
+      "  Examples: \n"\
+      "  512               - all ports have 512 RX desc per queue\n"\
+      "  0.256, 1.512      - port 0 has 256 RX desc per queue,\n"\
+      "                      port 1 has 512 RX desc per queue\n"\
+      "  [0-2].256, 3.1024 - ports 0, 1 and 2 have 256 RX desc per "\
+      " queue,\n"\
+      "                      port 3 has 1024 RX desc per queue."
+      , 0 },
   { "rotate_seconds", 'G', "T", 0, "Create a new set of files every T "\
     "seconds. Use strftime formats within the output file template to rename "\
       "each file accordingly.", 0},
@@ -77,34 +94,105 @@ struct arguments {
   char output_file_template[DPDKCAP_OUTPUT_FILENAME_LENGTH];
   uint64_t portmask;
   int statistics;
-  unsigned int nb_mbufs;
-  unsigned int per_port_c_cores;
-  unsigned int num_w_cores;
+  unsigned long nb_mbufs;
+  char * num_rx_desc_str_matrix;
+  unsigned long per_port_c_cores;
+  unsigned long num_w_cores;
   int no_compression;
-  unsigned int snaplen;
-  unsigned int rotate_seconds;
+  unsigned long snaplen;
+  unsigned long rotate_seconds;
   uint64_t file_size_limit;
   char * log_file;
 };
+
+static int parse_matrix_opt(char * arg, unsigned long * matrix,
+    unsigned long max_len) {
+  char * comma_tokens [100];
+  int nb_comma_tokens;
+  char * dot_tokens [3];
+  int nb_dot_tokens;
+  char * dash_tokens [3];
+  int nb_dash_tokens;
+
+  char * end;
+
+  unsigned long left_key;
+  unsigned long right_key;
+  unsigned long  value;
+
+  nb_comma_tokens = rte_strsplit(arg, strlen(arg), comma_tokens, 100, ',');
+  // Case with a single value
+  if(nb_comma_tokens == 1 && strchr(arg, '.') == NULL) {
+    errno = 0;
+    value = strtoul(arg, &end, 10);
+    if(errno||*end!='\0') return -EINVAL;
+    for(unsigned long key=0; key<max_len; key++) {
+      matrix[key] = value;
+    }
+    return 0;
+  }
+
+  // Key-value matrix
+  if (nb_comma_tokens > 0) {
+    for(int comma=0; comma < nb_comma_tokens; comma++) {
+      // Split between left and right side of the dot
+      nb_dot_tokens = rte_strsplit(comma_tokens[comma],
+          strlen(comma_tokens[comma]), dot_tokens, 3, '.');
+      if(nb_dot_tokens != 2)
+        return -EINVAL;
+
+      // Handle value
+      errno = 0;
+      value = strtoul(dot_tokens[1], &end, 10);
+      if(errno||*end!='\0') return -EINVAL;
+
+      // Handle key
+      nb_dash_tokens = rte_strsplit(dot_tokens[0],
+          strlen(dot_tokens[0]), dash_tokens, 3, '-');
+      if(nb_dash_tokens == 1) {
+        // Single value
+        left_key = strtoul(dash_tokens[0], &end, 10);
+        if(errno||*end!='\0') return -EINVAL;
+        right_key = left_key;
+      } else if (nb_dash_tokens == 2) {
+        // Interval value
+        left_key =  strtoul(dash_tokens[0], &end, 10);
+        if(errno||*end!='\0') return -EINVAL;
+        right_key = strtoul(dash_tokens[1], &end, 10);
+        if(errno||*end!='\0') return -EINVAL;
+      } else {
+        return -EINVAL;
+      }
+
+      // Fill-in the matrix
+      if (right_key < max_len && right_key >= left_key) {
+        for (unsigned long key = left_key; key <= right_key; key ++) {
+          matrix[key] = value;
+        }
+      } else {
+        return -EINVAL;
+      }
+    }
+  } else {
+   return -EINVAL;
+  }
+  return 0;
+}
+
 
 static error_t parse_opt(int key, char* arg, struct argp_state *state) {
   struct arguments* arguments = state->input;
   char *end;
 
+  errno = 0;
+  end = NULL;
   switch (key) {
     case 'p':
       /* parse hexadecimal string */
-      errno = 0; // strtoul does not fix errno to 0 on success
       arguments->portmask = strtoul(arg, &end, 16);
-      if (errno != 0 || *end != '\0' ||
-          (arguments->portmask == ULONG_MAX && errno == ERANGE)) {
-        RTE_LOG(ERR, DPDKCAP, "Invalid portmask '%s' (could not convert to "\
-            "unsigned long)\n", arg);
-        return EINVAL;
-      }
       if (arguments->portmask == 0) {
         RTE_LOG(ERR, DPDKCAP, "Invalid portmask '%s', no port used\n", arg);
-        return EINVAL;
+        return -EINVAL;
       }
       break;
     case 'o':
@@ -115,22 +203,25 @@ static error_t parse_opt(int key, char* arg, struct argp_state *state) {
       arguments->statistics = 1;
       break;
     case 'm':
-      arguments->nb_mbufs = atoi(arg);
+      arguments->nb_mbufs = strtoul(arg, &end, 10);
+      break;
+    case 'd':
+      arguments->num_rx_desc_str_matrix = arg;
       break;
     case 'c':
-      arguments->per_port_c_cores = atoi(arg);
+      arguments->per_port_c_cores = strtoul(arg, &end, 10);
       break;
     case 'w':
-      arguments->num_w_cores = atoi(arg);
+      arguments->num_w_cores = strtoul(arg, &end, 10);
       break;
     case 's':
-      arguments->snaplen = atoi(arg);
+      arguments->snaplen = strtoul(arg, &end, 10);
       break;
     case 'G':
-      arguments->rotate_seconds = atoi(arg);
+      arguments->rotate_seconds = strtoul(arg, &end, 10);
       break;
     case 'C':
-      arguments->file_size_limit = atoll(arg);
+      arguments->file_size_limit = strtoll(arg, &end, 10);
       break;
     case 700:
       arguments->log_file = arg;
@@ -140,6 +231,10 @@ static error_t parse_opt(int key, char* arg, struct argp_state *state) {
       break;
     default:
       return ARGP_ERR_UNKNOWN;
+  }
+  if(errno||(end != NULL && *end != '\0')) {
+    RTE_LOG(ERR, DPDKCAP, "Invalid value '%s'\n", arg);
+    return -EINVAL;
   }
   return 0;
 }
@@ -170,19 +265,19 @@ static const struct rte_eth_conf port_conf_default = {
 static int port_init(
     uint8_t port,
     const uint16_t rx_rings,
+    unsigned int num_rxdesc,
     struct rte_mempool *mbuf_pool) {
 
   struct rte_eth_conf port_conf = port_conf_default;
   struct rte_eth_dev_info dev_info;
   int retval;
-  uint32_t nb_desc;
   uint16_t q;
 
   /* Check if the port id is valid */
   if(rte_eth_dev_is_valid_port(port)==0) {
     RTE_LOG(ERR, DPDKCAP, "Port identifier %d out of range (0 to %d) or not"\
        " attached.\n", port, rte_eth_dev_count()-1);
-    return -1;
+    return -EINVAL;
   }
 
   /* Get the device info */
@@ -191,8 +286,19 @@ static int port_init(
   /* Check if the requested number of queue is valid */
   if(rx_rings > dev_info.max_rx_queues) {
     RTE_LOG(ERR, DPDKCAP, "Port %d can only handle up to %d queues (%d "\
-        "requested)\n", port, dev_info.max_rx_queues, rx_rings);
-    return -1;
+        "requested).\n", port, dev_info.max_rx_queues, rx_rings);
+    return -EINVAL;
+  }
+
+  /* Check if the number of requested RX descriptors is valid */
+  if(num_rxdesc > dev_info.rx_desc_lim.nb_max ||
+     num_rxdesc < dev_info.rx_desc_lim.nb_min ||
+     num_rxdesc % dev_info.rx_desc_lim.nb_align != 0) {
+    RTE_LOG(ERR, DPDKCAP, "Port %d cannot be configured with %d RX "\
+        "descriptors per queue (min:%d, max:%d, align:%d)\n",
+        port, num_rxdesc, dev_info.rx_desc_lim.nb_min,
+        dev_info.rx_desc_lim.nb_max, dev_info.rx_desc_lim.nb_align);
+    return -EINVAL;
   }
 
   /* Configure multiqueue (Activate Receive Side Scaling on UDP/TCP fields) */
@@ -204,20 +310,17 @@ static int port_init(
 
   /* Configure the Ethernet device. */
   retval = rte_eth_dev_configure(port, rx_rings, 0, &port_conf);
-  if (retval != 0) {
+  if (retval) {
     RTE_LOG(ERR, DPDKCAP, "rte_eth_dev_configure(...): %s\n",
         rte_strerror(-retval));
     return retval;
   }
 
-  /* Compute the number of descriptors needed */
-  nb_desc = RX_DESC_DEFAULT;
-
   /* Allocate and set up RX queues. */
   for (q = 0; q < rx_rings; q++) {
-    retval = rte_eth_rx_queue_setup(port, q, nb_desc,
+    retval = rte_eth_rx_queue_setup(port, q, num_rxdesc,
         rte_eth_dev_socket_id(port), NULL, mbuf_pool);
-    if (retval < 0) {
+    if (retval) {
       RTE_LOG(ERR, DPDKCAP, "rte_eth_rx_queue_setup(...): %s\n",
           rte_strerror(-retval));
       return retval;
@@ -225,10 +328,10 @@ static int port_init(
   }
 
   /* Stats bindings (if more than one queue) */
-  if(rx_rings > 1) {
+  if(dev_info.max_rx_queues > 1) {
     for (q = 0; q < rx_rings; q++) {
       retval = rte_eth_dev_set_rx_queue_stats_mapping (port, q, q);
-      if (retval != 0) {
+      if (retval) {
         RTE_LOG(WARNING, DPDKCAP, "rte_eth_dev_set_rx_queue_stats_mapping(...):"\
             " %s\n", rte_strerror(-retval));
         RTE_LOG(WARNING, DPDKCAP, "The queues statistics mapping failed. The "\
@@ -243,24 +346,15 @@ static int port_init(
   /* Display the port MAC address. */
   struct ether_addr addr;
   rte_eth_macaddr_get(port, &addr);
-  RTE_LOG(INFO, DPDKCAP, "Port %u MAC: %02" PRIx8 " %02" PRIx8 " %02" PRIx8
-      " %02" PRIx8 " %02" PRIx8 " %02" PRIx8 "\n", (unsigned) port,
+  RTE_LOG(INFO, DPDKCAP, "Port %u: MAC=%02" PRIx8 ":%02" PRIx8 ":%02" PRIx8
+      ":%02" PRIx8 ":%02" PRIx8 ":%02" PRIx8 ", RXdesc/queue=%d\n",
+      (unsigned) port,
       addr.addr_bytes[0], addr.addr_bytes[1], addr.addr_bytes[2],
-      addr.addr_bytes[3], addr.addr_bytes[4], addr.addr_bytes[5]);
+      addr.addr_bytes[3], addr.addr_bytes[4], addr.addr_bytes[5],
+      num_rxdesc);
 
   return 0;
 }
-
-/*
- * Starts given port
- */
-static int port_start(uint8_t port) {
-  int retval = 0;
-  /* Start the Ethernet port. */
-  retval = rte_eth_dev_start(port);
-  return retval;
-}
-
 
 /*
  * Handles signals
@@ -296,6 +390,7 @@ int main(int argc, char *argv[]) {
   if (ret < 0)
     rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
 
+
   argc -= ret;
   argv += ret;
 
@@ -303,6 +398,7 @@ int main(int argc, char *argv[]) {
   arguments = (struct arguments) {
     .statistics = 0,
       .nb_mbufs = NUM_MBUFS_DEFAULT,
+      .num_rx_desc_str_matrix = NULL,
       .per_port_c_cores = 1,
       .num_w_cores = 1,
       .no_compression = 0,
@@ -350,11 +446,17 @@ int main(int argc, char *argv[]) {
   if(!arguments.no_compression)
     strcat(arguments.output_file_template, ".lzo");
 
-
-
-  /* Check if one port is available */
+  /* Check if at least one port is available */
   if (rte_eth_dev_count() == 0)
     rte_exit(EXIT_FAILURE, "Error: No port available.\n");
+
+  /* Fills in the number of rx descriptors matrix */
+  unsigned long * num_rx_desc_matrix = calloc(rte_eth_dev_count(), sizeof(int));
+  if (arguments.num_rx_desc_str_matrix != NULL &&
+      parse_matrix_opt(arguments.num_rx_desc_str_matrix,
+        num_rx_desc_matrix, rte_eth_dev_count()) < 0) {
+    rte_exit(EXIT_FAILURE, "Invalid RX descriptors matrix.\n");
+  }
 
   /* Creates the port list */
   nb_ports = 0;
@@ -445,8 +547,12 @@ int main(int argc, char *argv[]) {
     port_id = portlist[i];
 
     /* Port init */
-    int retval = port_init(port_id, arguments.per_port_c_cores, mbuf_pool);
-    if (retval != 0) {
+    int retval = port_init(
+        port_id,
+        arguments.per_port_c_cores,
+        (num_rx_desc_matrix[i] != 0)?num_rx_desc_matrix[i]:RX_DESC_DEFAULT,
+        mbuf_pool);
+    if (retval) {
       rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8 "\n", port_id);
     }
 
@@ -475,8 +581,8 @@ int main(int argc, char *argv[]) {
     }
 
     /* Start the port once everything is ready to capture */
-    retval = port_start(port_id);
-    if (retval != 0) {
+    retval = rte_eth_dev_start(port_id);
+    if (retval) {
       rte_exit(EXIT_FAILURE, "Cannot start port %"PRIu8 "\n", port_id);
     }
   }
@@ -513,6 +619,10 @@ int main(int argc, char *argv[]) {
 
   //Finalize
   free(cores_stats_write_list);
+  free(cores_stats_capture_list);
+  free(cores_config_write_list);
+  free(cores_config_capture_list);
+  free(num_rx_desc_matrix);
 
   return 0;
 }

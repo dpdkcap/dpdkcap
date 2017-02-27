@@ -132,6 +132,26 @@ is formatted according to the following tokens:
   allocation failure at startup or RX mbufs allocation failures while running).
   Optimal values (in term of memory usage) are powers of 2 minus one
   (n=2^q-1).
+- `-d, --rx_desc` allow you to fix the number of RX descriptors per queue used.
+  This value can be fixed in a per port fashion. The follonwing formats are
+  available:
+  - A single integer value: fixes the given number of RX descriptors for all
+    ports.
+  - A list of key-values, assigning a value to the given port id, following this
+    format:
+    ```
+        <matrix> := <key>.<nb_rx_desc> { "," <key>.<nb_rx_desc> "," ...}
+        <key>    := { <interval> | <port> }\n"\
+        <list>   := <lower_port> "-" <upper_port>
+    ```
+    Examples:
+    ```
+        512               - all ports have 512 RX desc per queue
+        0.256, 1.512      - port 0 has 256 RX desc per queue,
+                            port 1 has 512 RX desc per queue
+        [0-2].256, 3.1024 - ports 0, 1 and 2 have 256 RX desc per queue,
+                            port 3 has 1024 RX desc per queue
+    ```
 
 ## 3. Troubleshooting
 
