@@ -161,9 +161,8 @@ Here is a list of common issues and how to solve them:
 - Mbufs allocation failures (while running): try to raise the number of memory
   buffers used with the `-m, -num_mbufs` option.
 - Problems with with RX queues configuration: the default number of RX
-  descriptors configured might be too high for your interface. Change the
-  `RX_DESC_DEFAULT` value in `dpdkcap.c`. (should be added as argument into a
-  next version)
+  descriptors configured might be too high for your interface. Try to change
+  the number of RX descriptors used with the `-d, --rx_desc` option.
 
 ## 4. Software License Agreements
 
