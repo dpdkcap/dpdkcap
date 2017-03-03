@@ -62,15 +62,15 @@ static struct argp_option options[] = {
       " number of RX descriptors,\n"\
       "- A list of key-values, assigning a configured number of RX "\
       "descriptors to the given port(s). Format: \n"\
-      "  <matrix> := <key>.<nb_rx_desc> { \",\" <key>.<nb_rx_desc> \",\" "\
+      "  <matrix>   := <key>.<nb_rx_desc> { \",\" <key>.<nb_rx_desc> \",\" "\
       "...\n"\
-      "  <key>    := { <interval> | <port> }\n"\
-      "  <list>   := <lower_port> \"-\" <upper_port>\n"\
+      "  <key>      := { <interval> | <port> }\n"\
+      "  <interval> := <lower_port> \"-\" <upper_port>\n"\
       "  Examples: \n"\
       "  512               - all ports have 512 RX desc per queue\n"\
       "  0.256, 1.512      - port 0 has 256 RX desc per queue,\n"\
       "                      port 1 has 512 RX desc per queue\n"\
-      "  [0-2].256, 3.1024 - ports 0, 1 and 2 have 256 RX desc per "\
+      "  0-2.256, 3.1024   - ports 0, 1 and 2 have 256 RX desc per "\
       " queue,\n"\
       "                      port 3 has 1024 RX desc per queue."
       , 0 },
