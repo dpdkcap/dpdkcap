@@ -16,7 +16,7 @@ SOURCES= dpdkcap.c core_write.c core_capture.c statistics_ncurses.c pcap.c utils
 
 SRCS-y += $(addprefix $(SRC_DIR)/, $(SOURCES))
 
-CFLAGS += -O3 -g $(WERROR_FLAGS) -Wfatal-errors
+CFLAGS += -O3 -g $(WERROR_FLAGS) -Wfatal-errors -std=c99 -U__STRICT_ANSI__
 LDLIBS += -lncurses
 
 include $(RTE_SDK)/mk/rte.extapp.mk
