@@ -3,10 +3,15 @@
 <p/>
 
 # DPDKCap
-
 DPDKCap is packet capture tool based on DPDK. It provides a multi-port,
 multi-core optimized capture with on the fly compression. Thus particularly
-suiting captures at very high speed rates (more that 10Gpbs).
+suiting captures at very high speeds (more than 10Gpbs).
+
+### Build status
+| Branch  | Status |
+|---|---|
+| Master | [![Build Status](https://api.travis-ci.org/dpdkcap/dpdkcap.svg?branch=master)](https://travis-ci.org/dpdkcap/dpdkcap) |
+| Develop | [![Build Status](https://api.travis-ci.org/dpdkcap/dpdkcap.svg?branch=develop)](https://travis-ci.org/dpdkcap/dpdkcap) |
 
 ## 1. Installation and platform configuration
 
