@@ -145,23 +145,21 @@ is formatted according to the following tokens:
   - A list of key-values, assigning a value to the given port id, following this
     format:
 
-<div style="margin-left:8em;">
+    ```
+    <matrix> := <key>.<nb_rx_desc> { "," <key>.<nb_rx_desc> "," ...}
+    <key>    := { <interval> | <port> }
+    <list>   := <lower_port> "-" <upper_port>
+    ```
 
-```
-<matrix> := <key>.<nb_rx_desc> { "," <key>.<nb_rx_desc> "," ...}
-<key>    := { <interval> | <port> }
-<list>   := <lower_port> "-" <upper_port>
-```
+    Examples:
 
-Examples:
-
-```
-512               - all ports have 512 RX desc per queue
-0.256, 1.512      - port 0 has 256 RX desc per queue,
-                    port 1 has 512 RX desc per queue
-[0-2].256, 3.1024 - ports 0, 1 and 2 have 256 RX desc per queue,
-                    port 3 has 1024 RX desc per queue
-```
+    ```
+    512               - all ports have 512 RX desc per queue
+    0.256, 1.512      - port 0 has 256 RX desc per queue,
+                        port 1 has 512 RX desc per queue
+    [0-2].256, 3.1024 - ports 0, 1 and 2 have 256 RX desc per queue,
+                        port 3 has 1024 RX desc per queue
+    ```
 
 </div>
 
