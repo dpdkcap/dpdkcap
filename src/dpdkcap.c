@@ -31,6 +31,8 @@
 #define DPDKCAP_OUTPUT_TEMPLATE_DEFAULT "output_" \
   DPDKCAP_OUTPUT_TEMPLATE_TOKEN_CORE_ID
 
+#define DPDKCAP_SNAPLEN_DEFAULT 65535
+
 #define DPDKCAP_OUTPUT_TEMPLATE_LENGTH 2 * DPDKCAP_OUTPUT_FILENAME_LENGTH
 
 #define RTE_LOGTYPE_DPDKCAP RTE_LOGTYPE_USER1
@@ -87,6 +89,8 @@ static struct argp_option options[] = {
   { "logs", 700, "FILE", 0, "Writes the logs into FILE instead of "\
     "stderr.", 0 },
   { "no-compression", 701, 0, 0, "Do not compress capture files.", 0 },
+  { "pcapng", 702, 0, 0, "Use pcapng file format instead of the libpcap one "\
+    "(see https://github.com/pcapng/pcapng).", 0 },
   { 0 } };
 
 struct arguments {
@@ -98,7 +102,8 @@ struct arguments {
   char * num_rx_desc_str_matrix;
   unsigned long per_port_c_cores;
   unsigned long num_w_cores;
-  int no_compression;
+  bool no_compression;
+  bool use_pcapng;
   unsigned long snaplen;
   unsigned long rotate_seconds;
   uint64_t file_size_limit;
@@ -227,7 +232,10 @@ static error_t parse_opt(int key, char* arg, struct argp_state *state) {
       arguments->log_file = arg;
       break;
     case 701:
-      arguments->no_compression = 1;
+      arguments->no_compression = true;
+      break;
+    case 702:
+      arguments->use_pcapng = true;
       break;
     default:
       return ARGP_ERR_UNKNOWN;
@@ -401,12 +409,13 @@ int main(int argc, char *argv[]) {
       .num_rx_desc_str_matrix = NULL,
       .per_port_c_cores = 1,
       .num_w_cores = 1,
-      .no_compression = 0,
-      .snaplen = PCAP_SNAPLEN_DEFAULT,
+      .no_compression = false,
+      .snaplen = DPDKCAP_SNAPLEN_DEFAULT,
       .portmask = 0x1,
       .rotate_seconds = 0,
       .file_size_limit = 0,
       .log_file=NULL,
+      .use_pcapng = false
   };
   strncpy(arguments.output_file_template, DPDKCAP_OUTPUT_TEMPLATE_DEFAULT,
       DPDKCAP_OUTPUT_FILENAME_LENGTH);
@@ -525,6 +534,7 @@ int main(int argc, char *argv[]) {
     config->stats = &(cores_stats_write_list[i]);
     config->output_file_template = arguments.output_file_template;
     config->no_compression = arguments.no_compression;
+    config->use_pcapng = arguments.use_pcapng;
     config->snaplen = arguments.snaplen;
     config->rotate_seconds = arguments.rotate_seconds;
     config->file_size_limit = arguments.file_size_limit;

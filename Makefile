@@ -12,7 +12,7 @@ APP=dpdkcap
 
 # all source are stored in SRCS-y
 SRC_DIR= src
-SOURCES= dpdkcap.c core_write.c core_capture.c statistics_ncurses.c pcap.c utils.c lzo/minilzo/minilzo.c lzo/lzowrite.c
+SOURCES= dpdkcap.c core_write.c core_capture.c statistics_ncurses.c utils.c lzo/minilzo/minilzo.c lzo/lzowrite.c
 
 SRCS-y += $(addprefix $(SRC_DIR)/, $(SOURCES))
 

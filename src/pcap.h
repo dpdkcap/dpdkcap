@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define PCAP_SNAPLEN_DEFAULT 65535
+#define PCAP_MAGIC_NUMBER 0xa1b2c3d4
 
 struct __attribute__((__packed__)) pcap_header {
 	uint32_t magic_number;  /* magic number */
@@ -21,7 +21,5 @@ struct pcap_packet_header {
 	uint32_t packet_length;
 	uint32_t packet_length_wire;
 };
-
-void pcap_header_init(struct pcap_header * header, unsigned int snaplen);
 
 #endif

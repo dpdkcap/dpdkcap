@@ -142,8 +142,8 @@ is formatted according to the following tokens:
   available:
   - A single integer value: fixes the given number of RX descriptors for all
     ports.
-  - A list of key-values, assigning a value to the given port id, following this
-    format:
+  - A list of key-values, assigning a value to the given port id, following
+    this format:
 
     ```
     <matrix>   := <key>.<nb_rx_desc> { "," <key>.<nb_rx_desc> "," ...}
@@ -160,8 +160,9 @@ is formatted according to the following tokens:
     0-2.256, 3.1024   - ports 0, 1 and 2 have 256 RX desc per queue,
                         port 3 has 1024 RX desc per queue
     ```
-
-</div>
+- `--pcapng` replaces the *libpcap* output format by the *pcapng* (next
+  generation) one. See its specification
+  [here](https://github.com/pcapng/pcapng).
 
 ## 3. Troubleshooting
 
