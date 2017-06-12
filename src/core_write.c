@@ -10,6 +10,7 @@
 #include <rte_log.h>
 #include <rte_mbuf.h>
 #include <rte_branch_prediction.h>
+#include <rte_version.h>
 
 #include "lzo/lzowrite.h"
 #include "pcap.h"
@@ -307,13 +308,23 @@ int write_core(const struct core_write_config * config) {
     }
 
     //Get packets from the ring
+#if RTE_VERSION >= RTE_VERSION_NUM(17,5,0,16)
+    to_write = rte_ring_dequeue_bulk(config->ring, (void*) dequeued,
+        DPDKCAP_WRITE_BURST_SIZE, NULL);
+#else
     to_write = rte_ring_dequeue_bulk(config->ring, (void*) dequeued,
         DPDKCAP_WRITE_BURST_SIZE);
+#endif
     if (likely(to_write==0)) {
       to_write = DPDKCAP_WRITE_BURST_SIZE;
     } else {
+#if RTE_VERSION >= RTE_VERSION_NUM(17,5,0,16)
+      to_write = rte_ring_dequeue_burst(config->ring, (void*)dequeued,
+          DPDKCAP_WRITE_BURST_SIZE, NULL);
+#else
       to_write = rte_ring_dequeue_burst(config->ring, (void*)dequeued,
           DPDKCAP_WRITE_BURST_SIZE);
+#endif
     }
 
     //Update stats

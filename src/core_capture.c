@@ -5,6 +5,7 @@
 #include <rte_log.h>
 #include <rte_lcore.h>
 #include <rte_ethdev.h>
+#include <rte_version.h>
 
 #include "core_capture.h"
 
@@ -39,8 +40,13 @@ int capture_core(const struct core_capture_config * config) {
     nb_rx = rte_eth_rx_burst(config->port, config->queue,
         bufs, DPDKCAP_CAPTURE_BURST_SIZE);
     if (likely(nb_rx > 0)) {
+#if RTE_VERSION >= RTE_VERSION_NUM(17,5,0,16)
+      nb_rx_enqueued = rte_ring_enqueue_bulk(config->ring, (void*) bufs,
+          nb_rx, NULL);
+#else
       nb_rx_enqueued = rte_ring_enqueue_bulk(config->ring, (void*) bufs,
           nb_rx);
+#endif
 
       /* Update stats */
       if(nb_rx_enqueued == 0 || nb_rx_enqueued == -EDQUOT) {

@@ -10,6 +10,7 @@
 #include <rte_ethdev.h>
 #include <rte_errno.h>
 #include <rte_string_fns.h>
+#include <rte_version.h>
 
 #include "pcap.h"
 #include "core_write.h"
@@ -422,8 +423,12 @@ int main(int argc, char *argv[]) {
   argp_parse(&argp, argc, argv, 0, 0, &arguments);
 
   /* Set log level */
+#if RTE_VERSION >= RTE_VERSION_NUM(17,5,0,16)
+  rte_log_set_level(RTE_LOG_DEBUG, RTE_LOG_DEBUG);
+#else
   rte_set_log_type(RTE_LOGTYPE_DPDKCAP, 1);
   rte_set_log_level(RTE_LOG_DEBUG);
+#endif
 
   /* Change log stream if needed */
   if(arguments.log_file) {
