@@ -255,7 +255,7 @@ static struct core_capture_stats* cores_stats_capture_list;
 static const struct rte_eth_conf port_conf_default = {
   .rxmode = {
     .mq_mode = ETH_MQ_RX_NONE,
-    .max_rx_pkt_len = ETHER_MAX_LEN,
+    .max_rx_pkt_len = RTE_ETHER_MAX_LEN,
   }
 };
 
@@ -352,7 +352,7 @@ static int port_init(
   rte_eth_promiscuous_enable(port);
 
   /* Display the port MAC address. */
-  struct ether_addr addr;
+  struct rte_ether_addr addr;
   rte_eth_macaddr_get(port, &addr);
   RTE_LOG(INFO, DPDKCAP, "Port %u: MAC=%02" PRIx8 ":%02" PRIx8 ":%02" PRIx8
       ":%02" PRIx8 ":%02" PRIx8 ":%02" PRIx8 ", RXdesc/queue=%d\n",
