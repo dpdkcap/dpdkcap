@@ -69,8 +69,8 @@ static FILE * open_pcap(char * output_file) {
 static int write_pcap(FILE * file, void * src, size_t len) {
   size_t retval;
   // Write file
-  retval = fwrite(src, len, 1, file);
-  if (unlikely(retval != 1)) {
+  retval = fwrite(src, 1, len, file);
+  if (unlikely(retval != len)) {
     RTE_LOG(ERR, DPDKCAP, "Could not write into file: %d (%s)\n",
         errno, strerror(errno));
     return -1;
