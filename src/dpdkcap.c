@@ -254,8 +254,8 @@ static struct core_capture_stats* cores_stats_capture_list;
 
 static const struct rte_eth_conf port_conf_default = {
   .rxmode = {
-    .mq_mode = ETH_MQ_RX_NONE,
-    .max_rx_pkt_len = ETHER_MAX_LEN,
+    .mq_mode = RTE_ETH_MQ_RX_NONE,
+    .max_lro_pkt_size = RTE_ETHER_MAX_LEN,
   }
 };
 
@@ -311,9 +311,9 @@ static int port_init(
 
   /* Configure multiqueue (Activate Receive Side Scaling on UDP/TCP fields) */
   if (rx_rings > 1) {
-    port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS;
+    port_conf.rxmode.mq_mode = RTE_ETH_MQ_RX_RSS;
     port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
-    port_conf.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_PROTO_MASK;
+    port_conf.rx_adv_conf.rss_conf.rss_hf = RTE_ETH_RSS_PROTO_MASK;
   }
 
   /* Configure the Ethernet device. */
@@ -352,7 +352,7 @@ static int port_init(
   rte_eth_promiscuous_enable(port);
 
   /* Display the port MAC address. */
-  struct ether_addr addr;
+  struct rte_ether_addr addr;
   rte_eth_macaddr_get(port, &addr);
   RTE_LOG(INFO, DPDKCAP, "Port %u: MAC=%02" PRIx8 ":%02" PRIx8 ":%02" PRIx8
       ":%02" PRIx8 ":%02" PRIx8 ":%02" PRIx8 ", RXdesc/queue=%d\n",
@@ -371,7 +371,7 @@ static volatile bool should_stop = false;
 static void signal_handler(int sig) {
   RTE_LOG(NOTICE, DPDKCAP, "Caught signal %s on core %u%s\n",
       strsignal(sig), rte_lcore_id(),
-      rte_get_master_lcore()==rte_lcore_id()?" (MASTER CORE)":"");
+      rte_get_main_lcore()==rte_lcore_id()?" (MAIN CORE)":"");
   should_stop = true;
 }
 
@@ -558,7 +558,7 @@ int main(int argc, char *argv[]) {
     lcoreid_list[nb_lcores] = core_index;
     nb_lcores++;
 
-    core_index = rte_get_next_lcore(core_index, SKIP_MASTER, 0);
+    core_index = rte_get_next_lcore(core_index, SKIP_MAIN, 0);
   }
 
   /* For each port */
@@ -596,7 +596,7 @@ int main(int argc, char *argv[]) {
       lcoreid_list[nb_lcores] = core_index;
       nb_lcores++;
 
-      core_index = rte_get_next_lcore(core_index, SKIP_MASTER, 0);
+      core_index = rte_get_next_lcore(core_index, SKIP_MAIN, 0);
     }
 
     /* Start the port once everything is ready to capture */

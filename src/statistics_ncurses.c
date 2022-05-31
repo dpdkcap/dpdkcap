@@ -147,7 +147,7 @@ static bool should_stop = false;
 static void signal_handler(int sig) {
   RTE_LOG(NOTICE, DPDKCAP, "Caught signal %s on core %u%s\n",
       strsignal(sig), rte_lcore_id(),
-      rte_get_master_lcore()==rte_lcore_id()?" (MASTER CORE)":"");
+      rte_get_main_lcore()==rte_lcore_id()?" (MAIN CORE)":"");
   should_stop = true;
 }
 
