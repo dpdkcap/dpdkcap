@@ -236,6 +236,11 @@ int write_core(const struct core_write_config * config) {
           DPDKCAP_WRITE_BURST_SIZE);
 #endif
 
+    if (unlikely(to_write == 0)) {
+      rte_delay_us(2);
+      continue;
+    }
+
     //Update stats
     config->stats->packets += to_write;
 

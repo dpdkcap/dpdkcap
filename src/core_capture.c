@@ -40,7 +40,9 @@ int capture_core(const struct core_capture_config * config) {
     /* Retrieve packets and put them into the ring */
     nb_rx = rte_eth_rx_burst(config->port, config->queue,
         bufs, DPDKCAP_CAPTURE_BURST_SIZE);
-    if (likely(nb_rx > 0)) {
+    if (unlikely(nb_rx == 0)) {
+      rte_delay_us(2);
+    } else {
 #if RTE_VERSION >= RTE_VERSION_NUM(17,5,0,16)
       nb_rx_enqueued = rte_ring_enqueue_burst(config->ring, (void*) bufs,
           nb_rx, NULL);
