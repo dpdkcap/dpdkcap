@@ -11,8 +11,10 @@
 #include <rte_errno.h>
 #include <rte_string_fns.h>
 #include <rte_version.h>
+#include <rte_malloc.h>
 
 #include "pcap.h"
+#include "numa.h"
 #include "core_write.h"
 #include "core_capture.h"
 #include "statistics.h"
@@ -90,6 +92,7 @@ static struct argp_option options[] = {
   { "no-compression", 701, 0, 0, "Do not compress capture files.", 0 },
   { 0 } };
 
+// XXX TODO NUMA
 struct arguments {
   char* args[2];
   char output_file_template[DPDKCAP_OUTPUT_FILENAME_LENGTH];
@@ -249,8 +252,8 @@ struct arguments arguments;
 static unsigned int portlist[64];
 static unsigned int nb_ports;
 
-static struct core_write_stats * cores_stats_write_list;
-static struct core_capture_stats* cores_stats_capture_list;
+static struct core_write_stats * cores_stats_write_list[MAX_LCORES];
+static struct core_capture_stats* cores_stats_capture_list[MAX_LCORES];
 
 static const struct rte_eth_conf port_conf_default = {
   .rxmode = {
@@ -313,7 +316,9 @@ static int port_init(
   if (rx_rings > 1) {
     port_conf.rxmode.mq_mode = RTE_ETH_MQ_RX_RSS;
     port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
-    port_conf.rx_adv_conf.rss_conf.rss_hf = RTE_ETH_RSS_PROTO_MASK;
+    //port_conf.rx_adv_conf.rss_conf.rss_hf = RTE_ETH_RSS_PROTO_MASK & dev_info.flow_type_rss_offloads;
+    port_conf.rx_adv_conf.rss_conf.rss_hf = dev_info.flow_type_rss_offloads;
+    //port_conf.rx_adv_conf.rss_conf.rss_hf = RTE_ETH_RSS_PROTO_MASK;
   }
 
   /* Configure the Ethernet device. */
@@ -367,12 +372,11 @@ static int port_init(
 /*
  * Handles signals
  */
-static volatile bool should_stop = false;
 static void signal_handler(int sig) {
   RTE_LOG(NOTICE, DPDKCAP, "Caught signal %s on core %u%s\n",
       strsignal(sig), rte_lcore_id(),
       rte_get_main_lcore()==rte_lcore_id()?" (MAIN CORE)":"");
-  should_stop = true;
+  stop_all_sockets();
 }
 
 /*
@@ -381,15 +385,16 @@ static void signal_handler(int sig) {
  */
 int main(int argc, char *argv[]) {
   signal(SIGINT, signal_handler);
-  struct core_capture_config * cores_config_capture_list;
-  struct core_write_config   * cores_config_write_list;
+  struct core_capture_config * cores_config_capture_list[MAX_LCORES];
+  struct core_write_config   * cores_config_write_list[MAX_LCORES];
   unsigned int lcoreid_list[MAX_LCORES];
   unsigned int nb_lcores;
   struct rte_mempool *mbuf_pool;
+  int socket_id;
   unsigned int port_id;
   unsigned int i,j;
   unsigned int required_cores;
-  unsigned int core_index;
+  int core_id;
   int result;
   uint16_t dev_count;
   FILE * log_file;
@@ -503,10 +508,26 @@ int main(int argc, char *argv[]) {
   RTE_LOG(INFO,DPDKCAP,"Using %u cores out of %d allocated\n",
       required_cores, rte_lcore_count());
 
+  nb_lcores = 0;
+
+  /* For each port */
+  for (i = 0; i < nb_ports; i++) {
+    port_id = portlist[i];
+    RTE_LOG(INFO,DPDKCAP,"Setup port %d\n",port_id);
+
+    socket_id = rte_eth_dev_socket_id(port_id);
+    if (socket_id < 0) {
+      rte_exit(EXIT_FAILURE, "Cannot determine port socket\n");
+  //  } else if (socket_id == 0) {
+  //    RTE_LOG(WARNING,DPDKCAP,"No socket_id for port %d\n",port_id);
+  //    socket_id = SOCKET_ID_ANY;
+    } else {
+      RTE_LOG(INFO,DPDKCAP,"Port %d on socket_id %u\n",port_id,socket_id);
+    }
 
   /* Creates a new mempool in memory to hold the mbufs. */
   mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", arguments.nb_mbufs,
-      MBUF_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+      MBUF_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
 
   if (mbuf_pool == NULL)
     rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
@@ -514,34 +535,26 @@ int main(int argc, char *argv[]) {
 
   //Initialize buffer for writing to disk
   write_ring = rte_ring_create("Ring for writing",
-      rte_align32pow2 (arguments.nb_mbufs), rte_socket_id(), 0);
+      rte_align32pow2 (arguments.nb_mbufs), socket_id, 0);
 
-  /* Core index */
-  core_index = rte_get_next_lcore(-1, 1, 0);
-
-  /* Init stats list */
-  cores_stats_write_list=
-    malloc(sizeof(struct core_write_stats)*arguments.num_w_cores);
-  cores_stats_capture_list=
-    malloc(sizeof(struct core_capture_stats)*arguments.per_port_c_cores
-        *nb_ports);
-
-  /* Init config lists */
-  cores_config_write_list=
-    malloc(sizeof(struct core_write_config)*arguments.num_w_cores);
-  cores_config_capture_list=
-    malloc(sizeof(struct core_capture_config)*arguments.per_port_c_cores
-        *nb_ports);
-
-  nb_lcores = 0;
   /* Writing cores */
-  for (i=0; i<arguments.num_w_cores; i++) {
+  for (j=0; j<arguments.num_w_cores; j++) {
+
+    core_id = get_core_on_socket(socket_id);
+    if (core_id < 0) 
+      rte_exit(EXIT_FAILURE, "Cannot get core on socket %d\n", socket_id);
+
+    cores_stats_write_list[nb_lcores]=
+      rte_zmalloc_socket("STATS WRITE", sizeof(struct core_write_stats), 0, socket_id);
+
+    cores_config_write_list[nb_lcores]=
+      rte_zmalloc_socket("CONFIG WRITE", sizeof(struct core_write_config), 0, socket_id);
 
     //Configure writing core
-    struct core_write_config * config = &(cores_config_write_list[i]);
+    struct core_write_config * config = cores_config_write_list[nb_lcores];
     config->ring = write_ring;
-    config->stop_condition = &should_stop;
-    config->stats = &(cores_stats_write_list[i]);
+    config->stop_condition = get_stopper_for_socket(socket_id);
+    config->stats = cores_stats_write_list[nb_lcores];
     config->output_file_template = arguments.output_file_template;
     config->no_compression = arguments.no_compression;
     config->snaplen = arguments.snaplen;
@@ -550,53 +563,58 @@ int main(int argc, char *argv[]) {
 
     //Launch writing core
     if (rte_eal_remote_launch((lcore_function_t *) write_core,
-          config, core_index) < 0)
+          config, core_id) < 0)
       rte_exit(EXIT_FAILURE, "Could not launch writing process on lcore %d.\n",
-          core_index);
+          core_id);
 
     //Add the core to the list
-    lcoreid_list[nb_lcores] = core_index;
+    lcoreid_list[nb_lcores] = core_id;
     nb_lcores++;
-
-    core_index = rte_get_next_lcore(core_index, SKIP_MAIN, 0);
   }
-
-  /* For each port */
-  for (i = 0; i < nb_ports; i++) {
-    port_id = portlist[i];
 
     /* Port init */
     int retval = port_init(
         port_id,
         arguments.per_port_c_cores,
-        (num_rx_desc_matrix[i] != 0)?num_rx_desc_matrix[i]:RX_DESC_DEFAULT,
+	// XXX TODO what was i?!
+        //(num_rx_desc_matrix[i] != 0)?num_rx_desc_matrix[i]:RX_DESC_DEFAULT,
+        RX_DESC_DEFAULT,
         mbuf_pool);
     if (retval) {
       rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8 "\n", port_id);
     }
 
+
     /* Capturing cores */
     for (j=0; j<arguments.per_port_c_cores; j++) {
+
+    core_id = get_core_on_socket(socket_id);
+    if (core_id < 0)
+      rte_exit(EXIT_FAILURE, "Cannot get core on socket %d\n", socket_id);
+
+  cores_stats_capture_list[nb_lcores]=
+    rte_zmalloc_socket("STATS CAPTURE", sizeof(struct core_capture_stats), 0, socket_id);
+  cores_config_capture_list[nb_lcores]=
+    rte_zmalloc_socket("CONFIG CAPTURE", sizeof(struct core_capture_config), 0, socket_id);
+
       //Configure capture core
       struct core_capture_config * config =
-        &(cores_config_capture_list[i*arguments.per_port_c_cores+j]);
+        cores_config_capture_list[nb_lcores];
       config->ring = write_ring;
-      config->stop_condition = &should_stop;
+      config->stop_condition = get_stopper_for_socket(socket_id);
       config->stats =
-        &(cores_stats_capture_list[i*arguments.per_port_c_cores+j]);
+        cores_stats_capture_list[nb_lcores];
       config->port = port_id;
       config->queue = j;
       //Launch capture core
       if (rte_eal_remote_launch((lcore_function_t *) capture_core,
-            config, core_index) < 0)
+            config, core_id) < 0)
         rte_exit(EXIT_FAILURE, "Could not launch capture process on lcore "\
-            "%d.\n",core_index);
+            "%d.\n",core_id);
 
       //Add the core to the list
-      lcoreid_list[nb_lcores] = core_index;
+      lcoreid_list[nb_lcores] = core_id;
       nb_lcores++;
-
-      core_index = rte_get_next_lcore(core_index, SKIP_MAIN, 0);
     }
 
     /* Start the port once everything is ready to capture */
@@ -604,43 +622,43 @@ int main(int argc, char *argv[]) {
     if (retval) {
       rte_exit(EXIT_FAILURE, "Cannot start port %"PRIu8 "\n", port_id);
     }
-  }
+  } // end foreach port
 
   //Initialize statistics timer
   struct stats_data sd = {
     .ring = write_ring,
     .cores_stats_write_list = cores_stats_write_list,
-    .cores_write_stats_list_size = arguments.num_w_cores,
     .cores_stats_capture_list = cores_stats_capture_list,
-    .cores_capture_stats_list_size = arguments.per_port_c_cores*nb_ports,
+    .num_cores = nb_lcores,
     .port_list=portlist,
     .port_list_size=nb_ports,
     .queue_per_port=arguments.per_port_c_cores,
     .log_file=arguments.log_file,
   };
 
-  if (arguments.statistics && !should_stop) {
+  if (arguments.statistics) {
     signal(SIGINT, SIG_DFL);
     //End the capture when the interface returns
     start_stats_display(&sd);
-    should_stop=true;
+    stop_all_sockets();
   }
 
+#define RTE_FREE(x) if(!(x == NULL)){rte_free(x);x=NULL;}
   //Wait for all the cores to complete and exit
   RTE_LOG(NOTICE, DPDKCAP, "Waiting for all cores to exit\n");
   for(i=0;i<nb_lcores;i++) {
-    result = rte_eal_wait_lcore(lcoreid_list[i]);
+    core_id = lcoreid_list[i];
+    result = rte_eal_wait_lcore(core_id);
     if (result < 0) {
       RTE_LOG(ERR, DPDKCAP, "Core %d did not stop correctly.\n",
-          lcoreid_list[i]);
+          core_id);
     }
-  }
-
+    RTE_FREE(cores_stats_write_list[i]);
+    RTE_FREE(cores_stats_capture_list[i]);
+    RTE_FREE(cores_config_write_list[i]);
+    RTE_FREE(cores_config_capture_list[i]);
+ }
   //Finalize
-  free(cores_stats_write_list);
-  free(cores_stats_capture_list);
-  free(cores_config_write_list);
-  free(cores_config_capture_list);
   free(num_rx_desc_matrix);
 
   return 0;

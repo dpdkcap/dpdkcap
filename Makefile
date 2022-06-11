@@ -4,7 +4,8 @@ APP = dpdkcap
 
 # all source (prefix gets added later)
 SRC_DIR = src
-SOURCES := dpdkcap.c core_write.c core_capture.c statistics_ncurses.c pcap.c utils.c lzo/minilzo/minilzo.c lzo/lzowrite.c
+#SOURCES := dpdkcap.c core_write.c core_capture.c statistics_ncurses.c pcap.c utils.c lzo/minilzo/minilzo.c lzo/lzowrite.c
+SOURCES := dpdkcap.c core_write.c core_capture.c statistics.c numa.c pcap.c utils.c lzo/minilzo/minilzo.c lzo/lzowrite.c
 
 PKGCONF ?= pkg-config
 
@@ -27,8 +28,8 @@ CFLAGS += -O3 $(shell $(PKGCONF) --cflags libdpdk)
 LDFLAGS_SHARED = $(shell $(PKGCONF) --libs libdpdk)
 LDFLAGS_STATIC = $(shell $(PKGCONF) --static --libs libdpdk)
 
-LDFLAGS_SHARED += $(shell $(PKGCONF) --libs ncurses)
-LDFLAGS_STATIC += $(shell $(PKGCONF) --static --libs ncurses)
+#LDFLAGS_SHARED += $(shell $(PKGCONF) --libs ncurses)
+#LDFLAGS_STATIC += $(shell $(PKGCONF) --static --libs ncurses)
 
 ifeq ($(MAKECMDGOALS),static)
 # check for broken pkg-config

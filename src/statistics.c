@@ -31,10 +31,12 @@ static int print_stats(
 
   nb_stat_update ++;
 
-  for (i=0; i<data->cores_write_stats_list_size; i++) {
-    total_packets += data->cores_stats_write_list[i].packets;
-    total_bytes += data->cores_stats_write_list[i].bytes;
-    total_compressedbytes += data->cores_stats_write_list[i].compressed_bytes;
+  for (i=0; i<data->num_cores; i++) {
+    if (data->cores_stats_write_list[i] == NULL) 
+	    continue;
+    total_packets += data->cores_stats_write_list[i]->packets;
+    total_bytes += data->cores_stats_write_list[i]->bytes;
+    total_compressedbytes += data->cores_stats_write_list[i]->compressed_bytes;
   }
 
   printf("\e[1;1H\e[2J");
@@ -51,12 +53,14 @@ static int print_stats(
       (float)total_bytes/(float)total_compressedbytes:0.0f);
 
   printf("-- PER WRITING CORE --\n");
-  for (i=0; i<data->cores_write_stats_list_size; i++) {
+  for (i=0; i<data->num_cores; i++) {
+	  if (data->cores_stats_write_list[i] == NULL)
+		  continue;
     printf("Writing core %d: %s ",
-        data->cores_stats_write_list[i].core_id,
-        data->cores_stats_write_list[i].output_file);
+        data->cores_stats_write_list[i]->core_id,
+        data->cores_stats_write_list[i]->output_file);
     printf("(%s)\n", bytes_format(
-          data->cores_stats_write_list[i].current_file_compressed_bytes));
+          data->cores_stats_write_list[i]->current_file_compressed_bytes));
   }
 
   printf("-- PER PORT --\n");
