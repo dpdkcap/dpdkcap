@@ -21,8 +21,6 @@ int capture_core(const struct core_capture_config * config) {
   int i;
   struct rte_eth_link link;
 
-  RTE_LOG(INFO, DPDKCAP, "Core %u is capturing packets for port %u\n",
-      rte_lcore_id(), config->port);
 
   /* Init stats */
   *(config->stats) = (struct core_capture_stats) {
@@ -33,10 +31,13 @@ int capture_core(const struct core_capture_config * config) {
 
   rte_eth_link_get_nowait(config->port, &link);
   while (link.link_status != RTE_ETH_LINK_UP) {
-    RTE_LOG(INFO, DPDKCAP, "Core %u waiting for port %u to come up\n",
+    RTE_LOG(INFO, DPDKCAP, "Capture core %u waiting for port %u to come up\n",
         rte_lcore_id(), config->port);
     rte_eth_link_get(config->port, &link);
   }
+
+  RTE_LOG(INFO, DPDKCAP, "Core %u is capturing packets for port %u\n",
+      rte_lcore_id(), config->port);
 
   /* Run until the application is quit or killed. */
   for (;;) {
