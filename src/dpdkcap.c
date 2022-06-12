@@ -434,6 +434,9 @@ int main(int argc, char *argv[]) {
   rte_set_log_level(RTE_LOG_DEBUG);
 #endif
 
+  // TODO confify
+  rte_delay_us_callback_register( &rte_delay_us_sleep );
+
   /* Change log stream if needed */
   if(arguments.log_file) {
     log_file = fopen(arguments.log_file, "w");
