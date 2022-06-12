@@ -8,6 +8,7 @@ struct stats_data {
   struct rte_ring * ring;
   struct core_write_stats ** cores_stats_write_list;
   struct core_capture_stats ** cores_stats_capture_list;
+  bool volatile * stop_condition;
   unsigned int num_cores;
   unsigned int * port_list;
   unsigned int port_list_size;

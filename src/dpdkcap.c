@@ -633,6 +633,7 @@ int main(int argc, char *argv[]) {
     .cores_stats_write_list = cores_stats_write_list,
     .cores_stats_capture_list = cores_stats_capture_list,
     .num_cores = nb_lcores,
+    .stop_condition = get_stopper_for_socket( rte_lcore_to_socket_id( rte_lcore_id())),
     .port_list=portlist,
     .port_list_size=nb_ports,
     .queue_per_port=arguments.per_port_c_cores,
@@ -640,7 +641,6 @@ int main(int argc, char *argv[]) {
   };
 
   if (arguments.statistics) {
-    signal(SIGINT, SIG_DFL);
     //End the capture when the interface returns
     start_stats_display(&sd);
     stop_all_sockets();

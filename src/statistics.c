@@ -91,21 +91,9 @@ static int print_stats(
   return 0;
 }
 
-/*
- * Handles signals
- */
-static bool should_stop = false;
-static void signal_handler(int sig) {
-  RTE_LOG(NOTICE, DPDKCAP, "Caught signal %s on core %u%s\n",
-      strsignal(sig), rte_lcore_id(),
-      rte_get_main_lcore()==rte_lcore_id()?" (MAIN CORE)":"");
-  should_stop = true;
-}
-
 static struct rte_timer stats_timer;
 
 void start_stats_display(struct stats_data * data) {
-  signal(SIGINT,signal_handler);
   //Initialize timers
   rte_timer_subsystem_init();
   //Timer launch
@@ -114,7 +102,7 @@ void start_stats_display(struct stats_data * data) {
       rte_lcore_id(), (void*) print_stats, data);
   //Wait for ctrl+c
   for (;;) {
-    if (unlikely(should_stop)) {
+    if (unlikely(*(data->stop_condition))) {
       break;
     }
     rte_timer_manage();
