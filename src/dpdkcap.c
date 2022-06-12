@@ -392,9 +392,11 @@ int main(int argc, char *argv[]) {
   struct rte_mempool *mbuf_pool;
   int socket_id;
   unsigned int port_id;
-  unsigned int i,j;
+  unsigned int port_index;
+  unsigned int j;
   unsigned int required_cores;
   int core_id;
+  unsigned int core_index;
   int result;
   uint16_t dev_count;
   FILE * log_file;
@@ -487,14 +489,14 @@ int main(int argc, char *argv[]) {
 
   /* Creates the port list */
   nb_ports = 0;
-  for (i = 0; i < 64; i++) {
-    if (! ((uint64_t)(1ULL << i) & arguments.portmask))
+  for (port_id = 0; port_id < 64; port_id++) {
+    if (! ((uint64_t)(1ULL << port_id) & arguments.portmask))
       continue;
-    if (i<dev_count)
-      portlist[nb_ports++] = i;
+    if (port_id<dev_count)
+      portlist[nb_ports++] = port_id;
     else
       RTE_LOG(WARNING, DPDKCAP, "Warning: port %d is in portmask, " \
-          "but not enough ports are available. Ignoring...\n", i);
+          "but not enough ports are available. Ignoring...\n", port_id);
   }
   if (nb_ports == 0)
     rte_exit(EXIT_FAILURE, "Error: Found no usable port. Check portmask "\
@@ -514,8 +516,8 @@ int main(int argc, char *argv[]) {
   nb_lcores = 0;
 
   /* For each port */
-  for (i = 0; i < nb_ports; i++) {
-    port_id = portlist[i];
+  for (port_index = 0; port_index < nb_ports; port_index++) {
+    port_id = portlist[port_index];
     RTE_LOG(INFO,DPDKCAP,"Setup port %d\n",port_id);
 
     socket_id = rte_eth_dev_socket_id(port_id);
@@ -579,9 +581,7 @@ int main(int argc, char *argv[]) {
     int retval = port_init(
         port_id,
         arguments.per_port_c_cores,
-	// XXX TODO what was i?!
-        //(num_rx_desc_matrix[i] != 0)?num_rx_desc_matrix[i]:RX_DESC_DEFAULT,
-        RX_DESC_DEFAULT,
+        (num_rx_desc_matrix[port_index] != 0)?num_rx_desc_matrix[port_index]:RX_DESC_DEFAULT,
         mbuf_pool);
     if (retval) {
       rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8 "\n", port_id);
@@ -649,17 +649,17 @@ int main(int argc, char *argv[]) {
 #define RTE_FREE(x) if(!(x == NULL)){rte_free(x);x=NULL;}
   //Wait for all the cores to complete and exit
   RTE_LOG(NOTICE, DPDKCAP, "Waiting for all cores to exit\n");
-  for(i=0;i<nb_lcores;i++) {
-    core_id = lcoreid_list[i];
+  for(core_index=0;core_index<nb_lcores;core_index++) {
+    core_id = lcoreid_list[core_index];
     result = rte_eal_wait_lcore(core_id);
     if (result < 0) {
       RTE_LOG(ERR, DPDKCAP, "Core %d did not stop correctly.\n",
           core_id);
     }
-    RTE_FREE(cores_stats_write_list[i]);
-    RTE_FREE(cores_stats_capture_list[i]);
-    RTE_FREE(cores_config_write_list[i]);
-    RTE_FREE(cores_config_capture_list[i]);
+    RTE_FREE(cores_stats_write_list[core_index]);
+    RTE_FREE(cores_stats_capture_list[core_index]);
+    RTE_FREE(cores_config_write_list[core_index]);
+    RTE_FREE(cores_config_capture_list[core_index]);
  }
   //Finalize
   free(num_rx_desc_matrix);
