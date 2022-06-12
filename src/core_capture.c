@@ -11,6 +11,27 @@
 
 #define RTE_LOGTYPE_DPDKCAP RTE_LOGTYPE_USER1
 
+void wait_link_up(const struct core_capture_config * config, bool wait) {
+  struct rte_eth_link link;
+
+  if (wait) {
+    rte_eth_link_get(config->port, &link);
+  } else {
+    rte_eth_link_get_nowait(config->port, &link);
+  }
+  if (link.link_status != RTE_ETH_LINK_UP) {
+    while (link.link_status != RTE_ETH_LINK_UP) {
+      RTE_LOG(INFO, DPDKCAP, "Capture core %u waiting for port %u to come up\n",
+        rte_lcore_id(), config->port);
+      rte_eth_link_get(config->port, &link);
+    }
+
+    RTE_LOG(INFO, DPDKCAP, "Core %u is capturing packets for port %u\n",
+      rte_lcore_id(), config->port);
+  }
+}
+
+
 /*
  * Capture the traffic from the given port/queue tuple
  */
@@ -19,8 +40,6 @@ int capture_core(const struct core_capture_config * config) {
   uint16_t nb_rx;
   int nb_rx_enqueued;
   int i;
-  struct rte_eth_link link;
-
 
   /* Init stats */
   *(config->stats) = (struct core_capture_stats) {
@@ -29,15 +48,7 @@ int capture_core(const struct core_capture_config * config) {
     .missed_packets = 0,
   };
 
-  rte_eth_link_get_nowait(config->port, &link);
-  while (link.link_status != RTE_ETH_LINK_UP) {
-    RTE_LOG(INFO, DPDKCAP, "Capture core %u waiting for port %u to come up\n",
-        rte_lcore_id(), config->port);
-    rte_eth_link_get(config->port, &link);
-  }
-
-  RTE_LOG(INFO, DPDKCAP, "Core %u is capturing packets for port %u\n",
-      rte_lcore_id(), config->port);
+  wait_link_up(config, false);
 
   /* Run until the application is quit or killed. */
   for (;;) {
@@ -51,6 +62,8 @@ int capture_core(const struct core_capture_config * config) {
         bufs, DPDKCAP_CAPTURE_BURST_SIZE);
     if (unlikely(nb_rx == 0)) {
       rte_delay_us(2);
+      wait_link_up(config, true);
+      continue;
     } else {
 #if RTE_VERSION >= RTE_VERSION_NUM(17,5,0,16)
       nb_rx_enqueued = rte_ring_enqueue_burst(config->ring, (void*) bufs,
