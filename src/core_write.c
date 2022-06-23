@@ -11,6 +11,7 @@
 #include <rte_mbuf.h>
 #include <rte_branch_prediction.h>
 #include <rte_version.h>
+#include <rte_random.h>
 
 #include "lzo/lzowrite.h"
 #include "pcap.h"
@@ -240,6 +241,13 @@ int write_core(const struct core_write_config * config) {
 	  continue;
         }
       }
+      if (task->sampling) {
+        if (rte_rand_max(task->sampling)) {
+	  // TODO stats
+	  continue;
+        }
+      }
+
       //Cast to packet
       bufptr = dequeued[i];
       wire_packet_length = rte_pktmbuf_pkt_len(bufptr);
