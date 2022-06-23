@@ -30,6 +30,8 @@ void apply_taskkv(char *key, char *val, void* cbd)
 
 	if (strcmp(key,"output_template")==0) {
 		strncpy(task->output_template,val,DPDKCAP_MAX_PATH_LEN);
+	} else if (strcmp(key,"bpf")==0) {
+		strncpy(task->bpf_str,val,DPDKCAP_MAX_BPF_LEN);
 	} else if (strcmp(key,"rotate_seconds")==0) {
 		task->output_rotate_seconds = strtoul(val, NULL, 10);
 	} else if (strcmp(key,"rotate_size")==0) {
@@ -141,6 +143,42 @@ void scan_by_name(char *dirname, void (*cb)(char*,int,struct stat*,void*), void*
 	scan_by_fd(dirfd, cb, cbd);
 }
 
+void compile_filter(struct task* task)
+{
+	struct rte_bpf_prm *bpf_prm = NULL;
+        struct bpf_program bf;
+        pcap_t *pcap = NULL;
+
+        pcap = pcap_open_dead(DLT_EN10MB, task->snaplen);
+        if (!pcap)
+                rte_exit(EXIT_FAILURE, "can not open pcap\n");
+
+        if (pcap_compile(pcap, &bf, task->bpf_str,
+                         1, PCAP_NETMASK_UNKNOWN) != 0)
+                rte_exit(EXIT_FAILURE, "pcap filter string not valid (%s)\n",
+                         pcap_geterr(pcap));
+
+        bpf_prm = rte_bpf_convert(&bf);
+        if (bpf_prm == NULL)
+                rte_exit(EXIT_FAILURE,
+                         "bpf convert failed: %s(%d)\n",
+                         rte_strerror(rte_errno), rte_errno);
+
+//        if (dump_bpf) {
+                printf("cBPF program (%u insns)\n", bf.bf_len);
+                bpf_dump(&bf, 1);
+                printf("\neBPF program (%u insns)\n", bpf_prm->nb_ins);
+                rte_bpf_dump(stdout, bpf_prm->ins, bpf_prm->nb_ins);
+//                exit(0);
+//        }
+
+        /* Don't care about original program any more */
+        pcap_freecode(&bf);
+        pcap_close(pcap);
+
+	task->bpf = rte_bpf_load(bpf_prm);
+}
+
 void check_scan_task(char* fn, int fd, struct stat* st, void* cbd)
 {
 	struct taskdir* td = (struct taskdir*)cbd;
@@ -227,6 +265,9 @@ void check_scan_task(char* fn, int fd, struct stat* st, void* cbd)
 
 		if (!t->snaplen)
 			t->snaplen = PCAP_SNAPLEN_DEFAULT;
+
+		if (!(t->bpf_str[0] == 0x00)) 
+			compile_filter(t);
 
 		printf("TASKSCAN task %i from '%s' ACTIVE\n", task_idx, fn);
 		t->task_state = TASK_ACTIVE;

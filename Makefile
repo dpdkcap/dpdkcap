@@ -28,8 +28,11 @@ CFLAGS += -O3 $(shell $(PKGCONF) --cflags libdpdk)
 LDFLAGS_SHARED = $(shell $(PKGCONF) --libs libdpdk)
 LDFLAGS_STATIC = $(shell $(PKGCONF) --static --libs libdpdk)
 
-#LDFLAGS_SHARED += $(shell $(PKGCONF) --libs ncurses)
-#LDFLAGS_STATIC += $(shell $(PKGCONF) --static --libs ncurses)
+LDFLAGS_SHARED += $(shell $(PKGCONF) --libs ncurses)
+LDFLAGS_STATIC += $(shell $(PKGCONF) --static --libs ncurses)
+
+LDFLAGS_SHARED += $(shell $(PKGCONF) --libs libpcap)
+LDFLAGS_STATIC += $(shell $(PKGCONF) --static --libs libpcap)
 
 ifeq ($(MAKECMDGOALS),static)
 # check for broken pkg-config

@@ -4,8 +4,15 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#include <rte_bpf.h>
+#include <rte_errno.h>
+#include <pcap/pcap.h>
+#include <pcap/bpf.h>
+
 #define DPDKCAP_MAX_PATH_LEN 1024
 #define DPDKCAP_MAX_FILE_LEN 256
+
+#define DPDKCAP_MAX_BPF_LEN 1024
 
 #define DPDKCAP_MAX_TASKS_PER_DIR 16
 
@@ -42,8 +49,8 @@ struct task {
 	size_t output_size;
 	int    output_count;
 
-	char bpf_str;
-	char bpf;
+	char bpf_str[DPDKCAP_MAX_BPF_LEN];
+	struct rte_bpf *bpf;
 	int  snaplen;
 	int  compression;
 	int  sampling;

@@ -155,6 +155,7 @@ int write_core(const struct core_write_config * config) {
   unsigned int remaining_bytes;
   int to_write;
   int bytes_to_write;
+  uint64_t bpf_rc[DPDKCAP_WRITE_BURST_SIZE];
   struct rte_mbuf * dequeued[DPDKCAP_WRITE_BURST_SIZE];
   struct rte_mbuf * bufptr;
   struct pcap_packet_header header;
@@ -205,7 +206,6 @@ int write_core(const struct core_write_config * config) {
     }
 
 
-    // TODO 
     for (task_idx=0; task_idx<DPDKCAP_MAX_TASKS_PER_DIR; task_idx++) {
       struct task* task = &config->taskdir->tasks[task_idx];
 
@@ -222,6 +222,11 @@ int write_core(const struct core_write_config * config) {
         file_close_func = (int (*)(void*)) close_pcap;
       }
 
+
+      if (task->bpf) {
+	      rte_bpf_exec_burst(task->bpf, (void*)dequeued, bpf_rc, to_write);
+      }
+
      // TODO fix stats
     //Update stats
     config->stats->packets += to_write;
@@ -229,6 +234,12 @@ int write_core(const struct core_write_config * config) {
     int i;
     bool file_changed;
     for (i = 0; i < to_write; i++) {
+      if (task->bpf) {
+	if (!bpf_rc[i]) {
+	  // TODO stats
+	  continue;
+        }
+      }
       //Cast to packet
       bufptr = dequeued[i];
       wire_packet_length = rte_pktmbuf_pkt_len(bufptr);
@@ -263,6 +274,9 @@ int write_core(const struct core_write_config * config) {
         config->stats->current_file_bytes = 0;
         memcpy(config->stats->output_file, task->output_filename,
             DPDKCAP_OUTPUT_FILENAME_LENGTH);
+
+        RTE_LOG(INFO, DPDKCAP, "Core %d task %d:%s writing to '%s'.\n",
+          		rte_lcore_id(), task_idx, task->task_filename, task->output_filename);
 
         //Reopen a file
         task->output_buffer = file_open_func(task->output_filename);
