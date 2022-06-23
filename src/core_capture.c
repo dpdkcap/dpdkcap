@@ -11,7 +11,7 @@
 
 #define RTE_LOGTYPE_DPDKCAP RTE_LOGTYPE_USER1
 
-void wait_link_up(const struct core_capture_config * config, bool wait) {
+uint32_t wait_link_up(const struct core_capture_config * config, bool wait) {
   struct rte_eth_link link;
 
   if (wait) {
@@ -26,9 +26,10 @@ void wait_link_up(const struct core_capture_config * config, bool wait) {
       rte_eth_link_get(config->port, &link);
     }
 
-    RTE_LOG(INFO, DPDKCAP, "Core %u is capturing packets for port %u\n",
-      rte_lcore_id(), config->port);
+    RTE_LOG(INFO, DPDKCAP, "Core %u is capturing packets for port %u at %u Mbps\n",
+      rte_lcore_id(), config->port, link.link_speed);
   }
+  return(link.link_speed);
 }
 
 
@@ -38,6 +39,7 @@ void wait_link_up(const struct core_capture_config * config, bool wait) {
 int capture_core(const struct core_capture_config * config) {
   struct rte_mbuf *bufs[DPDKCAP_CAPTURE_BURST_SIZE];
   uint16_t nb_rx;
+  uint32_t linkspeed = 0;
   int nb_rx_enqueued;
   int i;
 
@@ -48,7 +50,7 @@ int capture_core(const struct core_capture_config * config) {
     .missed_packets = 0,
   };
 
-  wait_link_up(config, false);
+  linkspeed = wait_link_up(config, false);
 
   /* Run until the application is quit or killed. */
   for (;;) {
@@ -62,9 +64,10 @@ int capture_core(const struct core_capture_config * config) {
         bufs, DPDKCAP_CAPTURE_BURST_SIZE);
     if (unlikely(nb_rx == 0)) {
       rte_delay_us(2);
-      wait_link_up(config, true);
+      linkspeed = wait_link_up(config, true);
       continue;
     } else {
+      // TODO add timestamps
 #if RTE_VERSION >= RTE_VERSION_NUM(17,5,0,16)
       nb_rx_enqueued = rte_ring_enqueue_burst(config->ring, (void*) bufs,
           nb_rx, NULL);
