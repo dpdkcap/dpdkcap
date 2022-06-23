@@ -56,7 +56,7 @@ static FILE * open_pcap(char * output_file) {
   //Open file
   file = fopen(output_file,"w");
   if (unlikely(!file)) {
-    RTE_LOG(ERR, DPDKCAP, "Core %d could not open %s in write mode: %d (%s)\n",
+    RTE_LOG(ERR, DPDKCAP, "Core %d could not open '%s' in write mode: %d (%s)\n",
         rte_lcore_id(), output_file, errno, strerror(errno));
   }
 
@@ -102,7 +102,7 @@ static struct lzowrite_buffer * open_lzo_pcap(char * output_file) {
   //Open file
   file = fopen(output_file,"w");
   if (unlikely(!file)) {
-    RTE_LOG(ERR, DPDKCAP, "Core %d could not open %s in write mode: %d (%s)\n",
+    RTE_LOG(ERR, DPDKCAP, "Core %d could not open '%s' in write mode: %d (%s)\n",
         rte_lcore_id(), output_file, errno, strerror(errno));
     goto cleanup;
   }
@@ -151,7 +151,6 @@ static int close_lzo_pcap(struct lzowrite_buffer * buffer) {
  * Write the packets form the write ring into a pcap compressed file
  */
 int write_core(const struct core_write_config * config) {
-  void * write_buffer;
   unsigned int packet_length, wire_packet_length, compressed_length;
   unsigned int remaining_bytes;
   int to_write;
@@ -166,26 +165,7 @@ int write_core(const struct core_write_config * config) {
   void * (*file_open_func)(char*);
   int (*file_write_func)(void*, void *, int);
   int (*file_close_func)(void*);
-
-  char file_name[DPDKCAP_OUTPUT_FILENAME_LENGTH];
-  unsigned int file_count = 0;
-  uint64_t file_size = 0;
-  struct timeval file_start;
-
-  if(config->no_compression) {
-    file_open_func  = (void*(*)(char*)) open_pcap;
-    file_write_func = (int (*)(void*, void*, int)) write_pcap;
-    file_close_func = (int (*)(void*)) close_pcap;
-  } else {
-    file_open_func  = (void*(*)(char*)) open_lzo_pcap;
-    file_write_func = (int (*)(void*, void*, int)) lzowrite;
-    file_close_func = (int (*)(void*)) close_lzo_pcap;
-  }
-  gettimeofday(&file_start, NULL);
-
-  //Update filename
-  format_from_template(file_name, config->output_file_template,
-      rte_lcore_id(), file_count, &file_start);
+  int task_idx;
 
   //Init stats
   *(config->stats) = (struct core_write_stats) {
@@ -197,35 +177,18 @@ int write_core(const struct core_write_config * config) {
       .bytes = 0,
       .compressed_bytes = 0,
   };
-  memcpy(config->stats->output_file, file_name,
-      DPDKCAP_OUTPUT_FILENAME_LENGTH);
-
-  //Init the common pcap header
-  pcap_header_init(&pcp, config->snaplen);
-
-  //Open new file
-  write_buffer = file_open_func(file_name);
-  if(unlikely(!write_buffer)) {
-    retval = -1;
-    goto cleanup;
-  }
-
-  //Write pcap header
-  written = file_write_func(write_buffer, (unsigned char *) &pcp, sizeof(struct pcap_header));
-  if(unlikely(written<0)) {
-    retval = -1;
-    goto cleanup;
-  }
-  file_size = written;
-
-  //Log
-  RTE_LOG(INFO, DPDKCAP, "Core %d is writing using file template: %s.\n",
-      rte_lcore_id(), config->output_file_template);
 
   for (;;) {
     if (unlikely(*(config->stop_condition) && rte_ring_empty(config->ring))) {
       break;
     }
+
+    //Get time
+    gettimeofday(&tv, NULL);
+
+
+    check_scan_taskdir(config->taskdir, tv.tv_sec);
+    // TODO something clever so tasks dont explode if update changes compression
 
     //Get packets from the ring
 #if RTE_VERSION >= RTE_VERSION_NUM(17,5,0,16)
@@ -241,6 +204,25 @@ int write_core(const struct core_write_config * config) {
       continue;
     }
 
+
+    // TODO 
+    for (task_idx=0; task_idx<DPDKCAP_MAX_TASKS_PER_DIR; task_idx++) {
+      struct task* task = &config->taskdir->tasks[task_idx];
+
+      if (task->task_state != TASK_ACTIVE)
+	continue;
+
+      if(task->compression) {
+        file_open_func  = (void*(*)(char*)) open_lzo_pcap;
+        file_write_func = (int (*)(void*, void*, int)) lzowrite;
+        file_close_func = (int (*)(void*)) close_lzo_pcap;
+      } else {
+        file_open_func  = (void*(*)(char*)) open_pcap;
+        file_write_func = (int (*)(void*, void*, int)) write_pcap;
+        file_close_func = (int (*)(void*)) close_pcap;
+      }
+
+     // TODO fix stats
     //Update stats
     config->stats->packets += to_write;
 
@@ -252,76 +234,79 @@ int write_core(const struct core_write_config * config) {
       wire_packet_length = rte_pktmbuf_pkt_len(bufptr);
 
       //Truncate packet if needed
-      packet_length = MIN(config->snaplen, wire_packet_length);
+      packet_length = MIN(task->snaplen, wire_packet_length);
 
-      //Get time
-      gettimeofday(&tv, NULL);
-
-      //Create a new file according to limits
-      file_changed = 0;
-      if(config->rotate_seconds &&
-          (uint32_t)(tv.tv_sec-file_start.tv_sec) >= config->rotate_seconds) {
-        file_count=0;
-        gettimeofday(&file_start, NULL);
-        file_changed=1;
+      // Need to close existing file?
+      if(task->output_buffer && 
+            task->output_rotate_seconds &&
+            (uint32_t)(tv.tv_sec-task->output_tstamp.tv_sec) >= task->output_rotate_seconds) {
+          task->output_count=0;
+	  file_close_func(task->output_buffer);
+	  task->output_buffer = NULL;
       }
-      if(config->file_size_limit && file_size >= config->file_size_limit) {
-        file_count++;
-        file_changed=1;
+      if(task->output_buffer && task->output_rotate_size && task->output_size >= task->output_rotate_size) {
+          task->output_count++;
+	  file_close_func(task->output_buffer);
+	  task->output_buffer = NULL;
       }
 
       //Open new file
-      if(file_changed) {
+      if(task->output_buffer == NULL) {
+        gettimeofday(&task->output_tstamp, NULL);
+
         //Change file name
-        format_from_template(file_name, config->output_file_template,
-            rte_lcore_id(), file_count, &file_start);
+        format_from_template(task->output_filename, task->output_template,
+            rte_lcore_id(), task->output_count, &task->output_tstamp);
 
         //Update stats
         config->stats->current_file_packets = 0;
         config->stats->current_file_bytes = 0;
-        memcpy(config->stats->output_file, file_name,
+        memcpy(config->stats->output_file, task->output_filename,
             DPDKCAP_OUTPUT_FILENAME_LENGTH);
 
-        //Close pcap file and open new one
-        file_close_func(write_buffer);
-
         //Reopen a file
-        write_buffer = file_open_func(file_name);
-        if(unlikely(!write_buffer)) {
-          retval = -1;
-          goto cleanup;
+        task->output_buffer = file_open_func(task->output_filename);
+        if(unlikely(!task->output_buffer)) {
+	  task->task_state = TASK_INACTIVE;
+          RTE_LOG(WARNING, DPDKCAP, "Core %d task %d open(%s) failed.\n",
+          rte_lcore_id(), task_idx, task->output_filename);
+	  break;
         }
 
+        //Init the common pcap header
+        pcap_header_init(&pcp, task->snaplen);
+
         //Write pcap header
-        written = file_write_func(write_buffer, &pcp,
+        written = file_write_func(task->output_buffer, &pcp,
             sizeof(struct pcap_header));
         if(unlikely(written<0)) {
           retval = -1;
           goto cleanup;
         }
         //Reset file size
-        file_size = written;
+        task->output_size = written;
       }
 
       //Write block header
+      // TODO get better packet timestamps
       header.timestamp = (int32_t) tv.tv_sec;
       header.microseconds = (int32_t) tv.tv_usec;
       header.packet_length = packet_length;
       header.packet_length_wire = wire_packet_length;
-      written = file_write_func(write_buffer, &header,
+      written = file_write_func(task->output_buffer, &header,
           sizeof(struct pcap_packet_header));
       if (unlikely(written<0)) {
         retval = -1;
         goto cleanup;
       }
-      file_size += written;
+      task->output_size += written;
 
       //Write content
       remaining_bytes = packet_length;
       compressed_length = 0;
       while (bufptr != NULL && remaining_bytes > 0) {
         bytes_to_write = MIN(rte_pktmbuf_data_len(bufptr), remaining_bytes);
-        written = file_write_func(write_buffer,
+        written = file_write_func(task->output_buffer,
             rte_pktmbuf_mtod(bufptr, void*),
             bytes_to_write);
         if (unlikely(written<0)) {
@@ -331,25 +316,40 @@ int write_core(const struct core_write_config * config) {
         bufptr = bufptr->next;
         remaining_bytes -= bytes_to_write;
         compressed_length += written;
-        file_size += written;
+        task->output_size += written;
       }
-
-      //Free buffer
-      rte_pktmbuf_free(dequeued[i]);
 
       //Update stats
       config->stats->bytes += packet_length;
       config->stats->compressed_bytes += compressed_length;
       config->stats->current_file_packets ++;
       config->stats->current_file_bytes += packet_length;
-      config->stats->current_file_compressed_bytes = file_size;
+      config->stats->current_file_compressed_bytes = task->output_size;
 
-    }
+    } // for pkt
+
+    } // for task
+
+    // Free all buffers
+    // TODO archive ring
+    rte_pktmbuf_free_bulk(dequeued, to_write);
+
   }
 
 cleanup:
   //Close pcap file
-  file_close_func(write_buffer);
+  for (task_idx=0; task_idx<DPDKCAP_MAX_TASKS_PER_DIR; task_idx++) {
+    struct task* task = &config->taskdir->tasks[task_idx];
+    if (task->output_buffer) {
+      if(task->compression) {
+        file_close_func = (int (*)(void*)) close_lzo_pcap;
+      } else {
+        file_close_func = (int (*)(void*)) close_pcap;
+      }
+      file_close_func(task->output_buffer);
+      task->output_buffer = NULL;
+    }
+  }
 
   RTE_LOG(INFO, DPDKCAP, "Closed writing core %d\n", rte_lcore_id());
 

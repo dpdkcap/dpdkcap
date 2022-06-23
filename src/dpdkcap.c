@@ -90,6 +90,8 @@ static struct argp_option options[] = {
   { "logs", 700, "FILE", 0, "Writes the logs into FILE instead of "\
     "stderr.", 0 },
   { "no-compression", 701, 0, 0, "Do not compress capture files.", 0 },
+  { "taskdir", 't', "TASKDIR", 0, "Directory to scan for task files.", 0 },
+  { "taskinterval", 'T', "TASKINTERVAL", 0, "Taskdir scan interval in seconds.", 0 },
   { 0 } };
 
 // XXX TODO NUMA
@@ -107,6 +109,8 @@ struct arguments {
   unsigned long rotate_seconds;
   uint64_t file_size_limit;
   char * log_file;
+  char * taskdir;
+  int taskinterval;
 };
 
 static int parse_matrix_opt(char * arg, unsigned long * matrix,
@@ -232,6 +236,12 @@ static error_t parse_opt(int key, char* arg, struct argp_state *state) {
       break;
     case 701:
       arguments->no_compression = 1;
+      break;
+    case 't':
+      arguments->taskdir = arg;
+      break;
+    case 'T':
+      arguments->taskinterval = strtoll(arg, &end, 10);
       break;
     default:
       return ARGP_ERR_UNKNOWN;
@@ -360,11 +370,11 @@ static int port_init(
   struct rte_ether_addr addr;
   rte_eth_macaddr_get(port, &addr);
   RTE_LOG(INFO, DPDKCAP, "Port %u: MAC=%02" PRIx8 ":%02" PRIx8 ":%02" PRIx8
-      ":%02" PRIx8 ":%02" PRIx8 ":%02" PRIx8 ", RXdesc/queue=%d\n",
+      ":%02" PRIx8 ":%02" PRIx8 ":%02" PRIx8 ", RXdesc/queue=%d, rx_capa=%#016x\n",
       (unsigned) port,
       addr.addr_bytes[0], addr.addr_bytes[1], addr.addr_bytes[2],
       addr.addr_bytes[3], addr.addr_bytes[4], addr.addr_bytes[5],
-      num_rxdesc);
+      num_rxdesc, dev_info.rx_offload_capa);
 
   return 0;
 }
@@ -423,6 +433,8 @@ int main(int argc, char *argv[]) {
       .rotate_seconds = 0,
       .file_size_limit = 0,
       .log_file=NULL,
+      .taskdir=NULL,
+      .taskinterval=1,
   };
   strncpy(arguments.output_file_template, DPDKCAP_OUTPUT_TEMPLATE_DEFAULT,
       DPDKCAP_OUTPUT_FILENAME_LENGTH);
@@ -560,11 +572,21 @@ int main(int argc, char *argv[]) {
     config->ring = write_ring;
     config->stop_condition = get_stopper_for_socket(socket_id);
     config->stats = cores_stats_write_list[nb_lcores];
-    config->output_file_template = arguments.output_file_template;
-    config->no_compression = arguments.no_compression;
-    config->snaplen = arguments.snaplen;
-    config->rotate_seconds = arguments.rotate_seconds;
-    config->file_size_limit = arguments.file_size_limit;
+
+    config->taskdir = rte_zmalloc_socket("CONFIG TASKDIR", sizeof(struct taskdir), 0, socket_id);
+    if (arguments.taskdir == NULL) {
+	    // add default task
+	    struct task* t = &(config->taskdir->tasks[0]);
+	    strncpy(t->output_template, arguments.output_file_template, DPDKCAP_MAX_PATH_LEN);
+	    t->output_rotate_seconds = arguments.rotate_seconds;
+	    t->output_rotate_size = arguments.file_size_limit;
+	    t->compression = !arguments.rotate_seconds;
+	    t->snaplen = arguments.snaplen;
+	    t->task_state = TASK_ACTIVE;
+    } else {
+		strncpy(config->taskdir->dirname, arguments.taskdir, DPDKCAP_MAX_PATH_LEN);
+		config->taskdir->interval = arguments.taskinterval;
+    }
 
     //Launch writing core
     if (rte_eal_remote_launch((lcore_function_t *) write_core,

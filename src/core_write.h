@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "tasks.h"
 
 #define DPDKCAP_OUTPUT_FILENAME_LENGTH 100
 #define DPDKCAP_WRITE_BURST_SIZE 256
@@ -12,11 +13,7 @@ struct core_write_config {
   struct rte_ring * ring;
   bool volatile * stop_condition;
   struct core_write_stats * stats;
-  char * output_file_template;
-  int no_compression;
-  unsigned int snaplen;
-  unsigned long rotate_seconds;
-  uint64_t file_size_limit;
+  struct taskdir * taskdir;
 };
 
 /* Statistics structure */
