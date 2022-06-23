@@ -164,6 +164,7 @@ void compile_filter(struct task* task)
                          "bpf convert failed: %s(%d)\n",
                          rte_strerror(rte_errno), rte_errno);
 
+#if 0
 //        if (dump_bpf) {
                 printf("cBPF program (%u insns)\n", bf.bf_len);
                 bpf_dump(&bf, 1);
@@ -171,6 +172,7 @@ void compile_filter(struct task* task)
                 rte_bpf_dump(stdout, bpf_prm->ins, bpf_prm->nb_ins);
 //                exit(0);
 //        }
+#endif
 
         /* Don't care about original program any more */
         pcap_freecode(&bf);
