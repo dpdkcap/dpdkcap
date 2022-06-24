@@ -735,6 +735,12 @@ int main(int argc, char *argv[])
 		//End the capture when the interface returns
 		start_stats_display(&sd);
 		stop_all_sockets();
+	} else {
+		volatile bool *stop_condition = 
+			get_stopper_for_socket(rte_lcore_to_socket_id(rte_lcore_id()));
+		while (!*(stop_condition)) {
+			rte_delay_us(100);
+		}
 	}
 #define RTE_FREE(x) if(!(x == NULL)){rte_free(x);x=NULL;}
 	//Wait for all the cores to complete and exit
