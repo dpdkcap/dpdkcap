@@ -1,7 +1,5 @@
 #include "statistics.h"
 
-#include <signal.h>
-
 #include <rte_ethdev.h>
 #include <rte_timer.h>
 #include <rte_ring.h>
@@ -115,5 +113,4 @@ void start_stats_display(struct stats_data *data)
 			     rte_get_timer_hz());
 	}
 	rte_timer_stop(&(stats_timer));
-	signal(SIGINT, SIG_DFL);
 }
