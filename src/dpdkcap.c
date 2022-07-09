@@ -18,6 +18,7 @@
 #include "core_write.h"
 #include "core_capture.h"
 #include "statistics.h"
+#include "timestamp.h"
 
 #define STR1(x)  #x
 #define STR(x)  STR1(x)
@@ -473,6 +474,7 @@ int main(int argc, char *argv[])
 
 	// TODO confify
 	rte_delay_us_callback_register(&rte_delay_us_sleep);
+	register_timestamp_dynfield();
 
 	/* Change log stream if needed */
 	if (arguments.log_file) {

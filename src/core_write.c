@@ -18,6 +18,7 @@
 #include "utils.h"
 
 #include "core_write.h"
+#include "timestamp.h"
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
@@ -245,6 +246,7 @@ int write_core(const struct core_write_config *config)
 
 			int i;
 			bool file_changed;
+			uint64_t tvns;
 			for (i = 0; i < to_write; i++) {
 				if (task->bpf) {
 					if (!bpf_rc[i]) {
@@ -262,6 +264,11 @@ int write_core(const struct core_write_config *config)
 				bufptr = dequeued[i];
 				wire_packet_length =
 				    rte_pktmbuf_pkt_len(bufptr);
+
+				//get pkt timestamp
+				tvns = *timestamp_field(bufptr);
+				tv.tv_sec = tvns / NSEC_PER_SEC;
+				tv.tv_usec = (tvns % NSEC_PER_SEC) / 1000;
 
 				//Truncate packet if needed
 				packet_length =

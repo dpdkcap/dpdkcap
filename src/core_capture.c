@@ -8,6 +8,7 @@
 #include <rte_version.h>
 
 #include "core_capture.h"
+#include "timestamp.h"
 
 #define RTE_LOGTYPE_DPDKCAP RTE_LOGTYPE_USER1
 
@@ -43,6 +44,8 @@ int capture_core(const struct core_capture_config *config)
 	struct rte_mbuf *bufs[DPDKCAP_CAPTURE_BURST_SIZE];
 	uint16_t nb_rx;
 	uint32_t linkspeed = 0;
+	struct timeval tv;
+	uint64_t tvns;
 	int nb_rx_enqueued;
 	int i;
 
@@ -62,6 +65,10 @@ int capture_core(const struct core_capture_config *config)
 			break;
 		}
 
+		/* get timestamp, convert to ns */
+		gettimeofday(&tv, NULL);
+		tvns = (tv.tv_sec * NSEC_PER_SEC) + (tv.tv_usec * 1000);
+
 		/* Retrieve packets and put them into the ring */
 		nb_rx = rte_eth_rx_burst(config->port, config->queue,
 					 bufs, DPDKCAP_CAPTURE_BURST_SIZE);
@@ -70,7 +77,10 @@ int capture_core(const struct core_capture_config *config)
 			linkspeed = wait_link_up(config, true);
 			continue;
 		} else {
-			// TODO add timestamps
+			/* add timestamps to mbufs */
+			for (i = 0; i < nb_rx; i++) {
+				*timestamp_field(bufs[i]) = tvns;
+			}
 #if RTE_VERSION >= RTE_VERSION_NUM(17,5,0,16)
 			nb_rx_enqueued =
 			    rte_ring_enqueue_burst(config->ring, (void *)bufs,
