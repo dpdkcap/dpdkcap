@@ -275,6 +275,8 @@ int write_core(const struct core_write_config *config)
 				    MIN(task->snaplen, wire_packet_length);
 
 				// Need to close existing file?
+				//
+				// expired output_rotate_seconds?
 				if (task->output_buffer &&
 				    task->output_rotate_seconds &&
 				    (uint32_t) (tv.tv_sec -
@@ -284,6 +286,25 @@ int write_core(const struct core_write_config *config)
 					file_close_func(task->output_buffer);
 					task->output_buffer = NULL;
 				}
+				// changed strftime?
+				if (task->output_buffer &&
+				    !task->output_rotate_seconds &&
+				    tv.tv_sec != task->output_tstamp.tv_sec) {
+					char check_fn[DPDKCAP_MAX_PATH_LEN];
+					task->output_tstamp = tv;
+					format_from_template(check_fn,
+							     task->
+							     output_template,
+							     rte_lcore_id(),
+							     task->output_count,
+							     &tv);
+					if (strcmp(check_fn,task->output_filename)) {
+						task->output_count = 0;
+						file_close_func(task->output_buffer);
+						task->output_buffer = NULL;
+					}
+				}
+				// reached output_rotate_size?
 				if (task->output_buffer
 				    && task->output_rotate_size
 				    && task->output_size >=
@@ -318,7 +339,7 @@ int write_core(const struct core_write_config *config)
 						rte_lcore_id(), task_idx,
 						task->task_filename,
 						task->output_filename);
-
+//TODO append mode
 					//Reopen a file
 					task->output_buffer =
 					    file_open_func(task->
