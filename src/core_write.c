@@ -294,8 +294,7 @@ int write_core(const struct core_write_config *config)
 				}
 				//Open new file
 				if (task->output_buffer == NULL) {
-					gettimeofday(&task->output_tstamp,
-						     NULL);
+					task->output_tstamp = tv;
 
 					//Change file name
 					format_from_template(task->
