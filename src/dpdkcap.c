@@ -519,7 +519,7 @@ int main(int argc, char *argv[])
 		rte_exit(EXIT_FAILURE, "Error: No port available.\n");
 
 	/* Fills in the number of rx descriptors matrix */
-	unsigned long *num_rx_desc_matrix = calloc(dev_count, sizeof(int));
+	unsigned long *num_rx_desc_matrix = calloc(dev_count, sizeof(unsigned long));
 	if (arguments.num_rx_desc_str_matrix != NULL &&
 	    parse_matrix_opt(arguments.num_rx_desc_str_matrix,
 			     num_rx_desc_matrix, dev_count) < 0) {
