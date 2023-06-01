@@ -7,21 +7,21 @@
 
 /* Core configuration structures */
 struct core_capture_config {
-  struct rte_ring * ring;
-  bool volatile * stop_condition;
-  struct core_capture_stats * stats;
-  uint8_t port;
-  uint8_t queue;
+	struct rte_ring *ring;
+	bool volatile *stop_condition;
+	struct core_capture_stats *stats;
+	uint8_t port;
+	uint8_t queue;
 };
 
 /* Statistics structure */
 struct core_capture_stats {
-  int core_id;
-  uint64_t packets; //Packets successfully enqueued
-  uint64_t missed_packets; //Packets core could not enqueue
+	int core_id;
+	uint64_t packets;	//Packets successfully enqueued
+	uint64_t missed_packets;	//Packets core could not enqueue
 };
 
 /* Launches a capture task */
-int capture_core(const struct core_capture_config * config);
+int capture_core(const struct core_capture_config *config);
 
 #endif
