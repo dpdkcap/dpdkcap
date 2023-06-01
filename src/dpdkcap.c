@@ -576,8 +576,10 @@ int main(int argc, char *argv[])
 		}
 
 		/* Creates a new mempool in memory to hold the mbufs. */
+		char strbuf[200];
+		sprintf(strbuf, "MBUF_POOL_P%d", port_id);
 		mbuf_pool =
-		    rte_pktmbuf_pool_create("MBUF_POOL", arguments.nb_mbufs,
+		    rte_pktmbuf_pool_create(strbuf, arguments.nb_mbufs,
 					    MBUF_CACHE_SIZE, 0,
 					    RTE_MBUF_DEFAULT_BUF_SIZE,
 					    socket_id);
@@ -586,7 +588,8 @@ int main(int argc, char *argv[])
 			rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
 
 		//Initialize buffer for writing to disk
-		write_ring = rte_ring_create("Ring for writing",
+		sprintf(strbuf, "RING_POOL_P%d", port_id);
+		write_ring = rte_ring_create(strbuf,
 					     rte_align32pow2(arguments.
 							     nb_mbufs),
 					     socket_id, 0);
