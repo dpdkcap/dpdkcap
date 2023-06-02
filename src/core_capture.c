@@ -56,7 +56,7 @@ int capture_core(const struct core_capture_config *config)
 		.missed_packets = 0,
 	};
 
-	linkspeed = wait_link_up(config, false);
+	linkspeed = wait_link_up(config, true);
 
 	/* Run until the application is quit or killed. */
 	for (;;) {
@@ -74,7 +74,7 @@ int capture_core(const struct core_capture_config *config)
 					 bufs, DPDKCAP_CAPTURE_BURST_SIZE);
 		if (unlikely(nb_rx == 0)) {
 			rte_delay_us(2);
-			linkspeed = wait_link_up(config, true);
+			linkspeed = wait_link_up(config, false);
 			continue;
 		} else {
 			/* add timestamps to mbufs */

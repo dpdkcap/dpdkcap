@@ -289,7 +289,7 @@ int write_core(const struct core_write_config *config)
 				// changed strftime?
 				if (task->output_buffer &&
 				    !task->output_rotate_seconds &&
-				    tv.tv_sec != task->output_tstamp.tv_sec) {
+				    tv.tv_sec > task->output_tstamp.tv_sec) {
 					char check_fn[DPDKCAP_MAX_PATH_LEN];
 					task->output_tstamp = tv;
 					format_from_template(check_fn,
